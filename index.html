@@ -379,64 +379,116 @@ body{font-family:var(--f);font-size:16px;line-height:1.5;background:var(--bg);co
   position:fixed;inset:0;z-index:9999;
   background:linear-gradient(160deg,#1a1f3a 0%,#0f1220 60%,#1a1230 100%);
   display:flex;flex-direction:column;align-items:center;justify-content:center;
-  padding:40px 24px;
+  padding:40px 24px;overflow-y:auto;
 ">
-  <div style="text-align:center;margin-bottom:40px">
-    <div style="margin-bottom:16px">
-      <svg width="68" height="68" viewBox="0 0 68 68" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect width="68" height="68" rx="18" fill="url(#lg1)"/>
-        <!-- Graduation cap -->
-        <polygon points="34,16 54,26 34,36 14,26" fill="white" opacity="0.95"/>
-        <path d="M46 30 L46 44 Q34 50 22 44 L22 30" fill="white" opacity="0.3"/>
-        <path d="M46 30.5 L46 44 Q34 50.5 22 44 L22 30.5" fill="none" stroke="white" stroke-width="1.5" opacity="0.7"/>
-        <!-- Tassel cord -->
-        <line x1="54" y1="26" x2="54" y2="40" stroke="white" stroke-width="2" opacity="0.7"/>
-        <circle cx="54" cy="42" r="2.5" fill="white" opacity="0.8"/>
-        <!-- R$ symbol subtle -->
-        <text x="34" y="47" font-family="'SF Mono',monospace" font-size="8.5" font-weight="700" fill="white" opacity="0.55" text-anchor="middle">R$</text>
-        <defs>
-          <linearGradient id="lg1" x1="0" y1="0" x2="68" y2="68" gradientUnits="userSpaceOnUse">
-            <stop offset="0%" stop-color="#3B5BDB"/>
-            <stop offset="100%" stop-color="#7C3AED"/>
-          </linearGradient>
-        </defs>
-      </svg>
+  <!-- ── SETUP SUPABASE (mostrado quando credenciais não configuradas) ── -->
+  <div id="lock-setup" style="display:none;width:100%;max-width:400px">
+    <div style="text-align:center;margin-bottom:28px">
+      <div style="font-size:42px;margin-bottom:10px">⚙️</div>
+      <div style="font-size:18px;font-weight:700;color:#fff;margin-bottom:6px">Configurar Supabase</div>
+      <div style="font-size:13px;color:rgba(255,255,255,.5);line-height:1.6">
+        Cole as credenciais do seu projeto Supabase<br>
+        <span style="font-size:11px">(Dashboard → Project Settings → API)</span>
+      </div>
     </div>
-    <div style="font-size:19px;font-weight:700;color:#fff;letter-spacing:-.02em;line-height:1.2">Controle Financeiro<br><span style="color:rgba(255,255,255,.7);font-weight:400">do Décio</span></div>
-    <div style="font-size:13px;color:rgba(255,255,255,.35);margin-top:6px">Digite a senha para continuar</div>
+    <div style="background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:20px;display:flex;flex-direction:column;gap:14px">
+      <div>
+        <label style="display:block;font-size:11px;font-weight:600;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Project URL</label>
+        <input id="setup-url" type="url" placeholder="https://xxxxxxxx.supabase.co"
+          style="width:100%;padding:11px 14px;border-radius:10px;border:1.5px solid rgba(255,255,255,.15);background:rgba(255,255,255,.08);color:#fff;font:400 14px/1 Inter,sans-serif;outline:none;-webkit-appearance:none"
+          onfocus="this.style.borderColor='rgba(59,91,219,.8)'" onblur="this.style.borderColor='rgba(255,255,255,.15)'">
+      </div>
+      <div>
+        <label style="display:block;font-size:11px;font-weight:600;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Anon Key</label>
+        <input id="setup-key" type="password" placeholder="eyJhbGciOiJIUzI1NiIsInR5c..."
+          style="width:100%;padding:11px 14px;border-radius:10px;border:1.5px solid rgba(255,255,255,.15);background:rgba(255,255,255,.08);color:#fff;font:400 13px/1 'SF Mono','Menlo',monospace;outline:none;-webkit-appearance:none"
+          onfocus="this.style.borderColor='rgba(59,91,219,.8)'" onblur="this.style.borderColor='rgba(255,255,255,.15)'">
+      </div>
+      <div id="setup-error" style="display:none;font-size:12px;color:#ff6b6b;background:rgba(255,107,107,.12);padding:10px 14px;border-radius:10px;border:1px solid rgba(255,107,107,.2)"></div>
+      <button onclick="saveSetupAndTest()" id="setup-btn"
+        style="width:100%;padding:14px;border-radius:12px;border:none;background:linear-gradient(135deg,#3B5BDB,#7C3AED);color:#fff;font:600 15px/1 Inter,sans-serif;cursor:pointer;transition:opacity .15s;letter-spacing:-.01em">
+        🔌 Conectar e Salvar
+      </button>
+      <div style="text-align:center">
+        <button onclick="showSetup(false)" style="background:none;border:none;color:rgba(255,255,255,.35);font:400 12px/1 Inter,sans-serif;cursor:pointer;padding:4px">
+          ← Voltar para o PIN
+        </button>
+      </div>
+    </div>
+    <div style="margin-top:16px;background:rgba(59,91,219,.15);border:1px solid rgba(59,91,219,.3);border-radius:12px;padding:14px 16px">
+      <div style="font-size:11px;font-weight:600;color:rgba(59,91,219,.9);margin-bottom:6px">📋 Como obter as credenciais</div>
+      <div style="font-size:11px;color:rgba(255,255,255,.45);line-height:1.8">
+        1. Acesse <b style="color:rgba(255,255,255,.6)">supabase.com</b> → seu projeto<br>
+        2. <b style="color:rgba(255,255,255,.6)">Project Settings → API</b><br>
+        3. Copie <b style="color:rgba(255,255,255,.6)">Project URL</b> e <b style="color:rgba(255,255,255,.6)">anon public key</b>
+      </div>
+    </div>
   </div>
 
-  <!-- PIN dots display -->
-  <div id="lock-dots" style="display:flex;gap:14px;margin-bottom:36px">
-    <div class="lock-dot" id="ld-0"></div>
-    <div class="lock-dot" id="ld-1"></div>
-    <div class="lock-dot" id="ld-2"></div>
-    <div class="lock-dot" id="ld-3"></div>
-    <div class="lock-dot" id="ld-4"></div>
-    <div class="lock-dot" id="ld-5"></div>
-  </div>
+  <!-- ── PIN (padrão, mostrado após setup) ── -->
+  <div id="lock-pin" style="display:flex;flex-direction:column;align-items:center;width:100%;max-width:320px">
+    <div style="text-align:center;margin-bottom:36px">
+      <div style="margin-bottom:14px">
+        <svg width="64" height="64" viewBox="0 0 68 68" fill="none">
+          <rect width="68" height="68" rx="18" fill="url(#lg1)"/>
+          <polygon points="34,16 54,26 34,36 14,26" fill="white" opacity="0.95"/>
+          <path d="M46 30.5 L46 44 Q34 50.5 22 44 L22 30.5" fill="none" stroke="white" stroke-width="1.5" opacity="0.7"/>
+          <line x1="54" y1="26" x2="54" y2="40" stroke="white" stroke-width="2" opacity="0.7"/>
+          <circle cx="54" cy="42" r="2.5" fill="white" opacity="0.8"/>
+          <text x="34" y="47" font-family="'SF Mono',monospace" font-size="8.5" font-weight="700" fill="white" opacity="0.55" text-anchor="middle">R$</text>
+          <defs>
+            <linearGradient id="lg1" x1="0" y1="0" x2="68" y2="68" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stop-color="#3B5BDB"/>
+              <stop offset="100%" stop-color="#7C3AED"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+      <div style="font-size:19px;font-weight:700;color:#fff;letter-spacing:-.02em;line-height:1.2">Controle Financeiro<br><span style="color:rgba(255,255,255,.6);font-weight:400">do Décio</span></div>
+      <div id="lock-status-msg" style="font-size:12px;color:rgba(255,255,255,.3);margin-top:8px">Digite o PIN para continuar</div>
 
-  <!-- Error message -->
-  <div id="lock-error" style="
-    display:none;font-size:13px;color:#ff6b6b;margin-bottom:20px;
-    background:rgba(255,107,107,.12);padding:8px 20px;border-radius:100px;
-    border:1px solid rgba(255,107,107,.2);
-  ">Senha incorreta — tente novamente</div>
+      <!-- Indicador Supabase no PIN -->
+      <div id="lock-sb-indicator" style="display:inline-flex;align-items:center;gap:5px;margin-top:10px;padding:4px 12px;border-radius:100px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);cursor:pointer" onclick="showSetup(true)" title="Configurar Supabase">
+        <span id="lock-sb-dot" style="width:7px;height:7px;border-radius:50%;background:#6b7280;transition:background .3s"></span>
+        <span id="lock-sb-label" style="font-size:11px;color:rgba(255,255,255,.4)">Verificando…</span>
+      </div>
+    </div>
 
-  <!-- Numpad -->
-  <div style="display:grid;grid-template-columns:repeat(3,72px);gap:12px">
-    <button class="lock-key" onclick="lockKey('1')">1</button>
-    <button class="lock-key" onclick="lockKey('2')">2</button>
-    <button class="lock-key" onclick="lockKey('3')">3</button>
-    <button class="lock-key" onclick="lockKey('4')">4</button>
-    <button class="lock-key" onclick="lockKey('5')">5</button>
-    <button class="lock-key" onclick="lockKey('6')">6</button>
-    <button class="lock-key" onclick="lockKey('7')">7</button>
-    <button class="lock-key" onclick="lockKey('8')">8</button>
-    <button class="lock-key" onclick="lockKey('9')">9</button>
-    <button class="lock-key lock-key-sm" onclick="lockClear()" style="font-size:12px;color:rgba(255,255,255,.5)">LIMPAR</button>
-    <button class="lock-key" onclick="lockKey('0')">0</button>
-    <button class="lock-key lock-key-del" onclick="lockDel()">⌫</button>
+    <!-- Dots -->
+    <div id="lock-dots" style="display:flex;gap:14px;margin-bottom:32px">
+      <div class="lock-dot" id="ld-0"></div>
+      <div class="lock-dot" id="ld-1"></div>
+      <div class="lock-dot" id="ld-2"></div>
+      <div class="lock-dot" id="ld-3"></div>
+      <div class="lock-dot" id="ld-4"></div>
+      <div class="lock-dot" id="ld-5"></div>
+    </div>
+
+    <!-- Error -->
+    <div id="lock-error" style="display:none;font-size:13px;color:#ff6b6b;margin-bottom:20px;background:rgba(255,107,107,.12);padding:8px 20px;border-radius:100px;border:1px solid rgba(255,107,107,.2)">
+      PIN incorreto — tente novamente
+    </div>
+
+    <!-- Numpad -->
+    <div style="display:grid;grid-template-columns:repeat(3,72px);gap:12px">
+      <button class="lock-key" onclick="lockKey('1')">1</button>
+      <button class="lock-key" onclick="lockKey('2')">2</button>
+      <button class="lock-key" onclick="lockKey('3')">3</button>
+      <button class="lock-key" onclick="lockKey('4')">4</button>
+      <button class="lock-key" onclick="lockKey('5')">5</button>
+      <button class="lock-key" onclick="lockKey('6')">6</button>
+      <button class="lock-key" onclick="lockKey('7')">7</button>
+      <button class="lock-key" onclick="lockKey('8')">8</button>
+      <button class="lock-key" onclick="lockKey('9')">9</button>
+      <button class="lock-key lock-key-sm" onclick="lockDel()">⌫</button>
+      <button class="lock-key" onclick="lockKey('0')">0</button>
+      <button class="lock-key lock-key-sm" onclick="lockClear()">CLR</button>
+    </div>
+
+    <!-- Link setup -->
+    <button onclick="showSetup(true)" style="margin-top:24px;background:none;border:none;color:rgba(255,255,255,.25);font:400 12px/1 Inter,sans-serif;cursor:pointer;padding:6px;transition:color .15s" onmouseover="this.style.color='rgba(255,255,255,.5)'" onmouseout="this.style.color='rgba(255,255,255,.25)'">
+      ⚙️ Configurar Supabase
+    </button>
   </div>
 </div>
 
@@ -470,8 +522,7 @@ body{font-family:var(--f);font-size:16px;line-height:1.5;background:var(--bg);co
   background:rgba(255,255,255,.18);
   transform:scale(.92);
 }
-.lock-key-sm{font-size:11px!important;font-weight:500!important;color:rgba(255,255,255,.45)!important}
-.lock-key-del{font-size:20px!important}
+.lock-key-sm{font-size:13px!important;font-weight:500!important;color:rgba(255,255,255,.55)!important}
 @keyframes lockShake{
   0%,100%{transform:translateX(0)}
   20%{transform:translateX(-8px)}
@@ -481,9 +532,11 @@ body{font-family:var(--f);font-size:16px;line-height:1.5;background:var(--bg);co
 }
 @keyframes lockUnlock{
   0%{opacity:1;transform:scale(1)}
-  50%{opacity:1;transform:scale(1.04)}
-  100%{opacity:0;transform:scale(1.08);pointer-events:none}
+  60%{opacity:1;transform:scale(1.03)}
+  100%{opacity:0;transform:scale(1.06);pointer-events:none}
 }
+#setup-btn:active{opacity:.8}
+#setup-url::-webkit-input-placeholder,#setup-key::-webkit-input-placeholder{color:rgba(255,255,255,.2)}
 </style>
 
 <div id="app">
@@ -1068,15 +1121,30 @@ body{font-family:var(--f);font-size:16px;line-height:1.5;background:var(--bg);co
 ══════════════════════════════════════════════════════════ */
 
 /* ─── SUPABASE CONFIG ─── */
-// ⚠️ Substitua com suas credenciais do Supabase Dashboard > Project Settings > API
-const SUPABASE_URL = 'https://SEU_PROJECT_ID.supabase.co';
-const SUPABASE_ANON_KEY = 'SUA_ANON_KEY_AQUI';
+// Credenciais persistidas em localStorage
+const LS_URL_KEY = 'fd-sb-url';
+const LS_KEY_KEY = 'fd-sb-key';
 
 let _sb = null;
+function _sbCredentials(){
+  return {
+    url: localStorage.getItem(LS_URL_KEY) || '',
+    key: localStorage.getItem(LS_KEY_KEY) || ''
+  };
+}
+function _sbConfigured(){
+  const {url,key} = _sbCredentials();
+  return url.startsWith('https://') && url.includes('.supabase.co') && key.length > 20;
+}
 function getSB(){
-  if(!_sb) _sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  if(!_sb){
+    const {url,key} = _sbCredentials();
+    if(!url || !key) throw new Error('Supabase não configurado');
+    _sb = supabase.createClient(url, key);
+  }
   return _sb;
 }
+function _resetSB(){ _sb = null; }
 
 /* ─── DB ADAPTER (IndexedDB → Supabase) ─── */
 // Mantém a mesma interface assíncrona que o código original usa
@@ -1269,29 +1337,42 @@ async function openDB(){ /* no-op com Supabase */ }
 
 /* ─── INDICADOR DE CONEXÃO ─── */
 let _sbConnected = false;
-async function checkSupabaseConnection(){
-  try{
-    const { data, error } = await getSB().from('categories').select('id').limit(1);
-    _sbConnected = !error;
-    const ind = document.getElementById('sb-status');
-    if(ind){
-      ind.textContent = _sbConnected ? '🟢 Online' : '🔴 Offline';
-      ind.title = _sbConnected ? 'Conectado ao Supabase' : 'Erro de conexão';
-    }
-    if(!_sbConnected) toast('⚠️ Configure as credenciais Supabase nas configurações', 5000);
-  }catch(e){
-    _sbConnected = false;
-    toast('⚠️ Supabase não configurado. Edite as credenciais no código.', 6000);
+
+function _setLockSbIndicator(status){
+  // status: 'checking' | 'ok' | 'error' | 'unconfigured'
+  const dot   = document.getElementById('lock-sb-dot');
+  const label = document.getElementById('lock-sb-label');
+  const ind   = document.getElementById('sb-status');
+  const colors = { checking:'#6b7280', ok:'#22c55e', error:'#ef4444', unconfigured:'#f59e0b' };
+  const labels = { checking:'Verificando…', ok:'Supabase conectado', error:'Erro de conexão', unconfigured:'Supabase não configurado' };
+  if(dot)   dot.style.background   = colors[status] || colors.checking;
+  if(label) label.textContent      = labels[status] || '';
+  if(ind){
+    ind.textContent = status==='ok' ? '🟢 Online' : status==='checking' ? '🔵 …' : '🔴 Offline';
+    ind.title = labels[status]||'';
   }
 }
 
-let db; // mantido por compatibilidade (não usado com Supabase)
-function openDB_legacy(){ return Promise.resolve(); }
-const dbAll   = s     => new Promise((res,rej) => { const r=db.transaction(s,'readonly').objectStore(s).getAll(); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); });
-const dbGet   = (s,k) => new Promise((res,rej) => { const r=db.transaction(s,'readonly').objectStore(s).get(k); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); });
-const dbPut   = (s,v) => new Promise((res,rej) => { const r=db.transaction(s,'readwrite').objectStore(s).put(v); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); });
-const dbDel   = (s,k) => new Promise((res,rej) => { const r=db.transaction(s,'readwrite').objectStore(s).delete(k); r.onsuccess=()=>res(); r.onerror=()=>rej(r.error); });
-const dbClear = s     => new Promise((res,rej) => { const r=db.transaction(s,'readwrite').objectStore(s).clear(); r.onsuccess=()=>res(); r.onerror=()=>rej(r.error); });
+async function checkSupabaseConnection(){
+  _setLockSbIndicator('checking');
+  if(!_sbConfigured()){
+    _sbConnected = false;
+    _setLockSbIndicator('unconfigured');
+    return false;
+  }
+  try{
+    const { data, error } = await getSB().from('categories').select('id').limit(1);
+    _sbConnected = !error;
+    _setLockSbIndicator(_sbConnected ? 'ok' : 'error');
+    return _sbConnected;
+  }catch(e){
+    _sbConnected = false;
+    _setLockSbIndicator('error');
+    return false;
+  }
+}
+
+/* IndexedDB removido — usando Supabase (funções definidas acima) */
 
 /* ─── STATE ─── */
 const S = { year: new Date().getFullYear(), tab:'dash', cats:[], parties:[], accounts:[], editId:null, fcstVisible:true, hiddenCats:new Set(), hiddenFcstCats:new Set(), _pendingFileId:null, _existingFileId:null, _removeFile:false, _convFileId:null };
@@ -2407,18 +2488,7 @@ function toggleFcstCols(){
   }
 }
 
-/* ─── LOGOUT ─── */
-function logout(){
-  sessionStorage.removeItem('fd-auth');
-  const ls=$('lock-screen');
-  ls.style.animation='';
-  ls.style.display='flex';
-  // Reset pin state
-  _lockInput='';
-  updateLockDots();
-  $('lock-error').style.display='none';
-  toast('🔒 Sessão encerrada');
-}
+/* logout() definido no bloco LOCK SCREEN acima */
 
 /* ─── EMAIL REPORT ─── */
 let _emailPdfBlob=null, _emailMailto='';
@@ -2927,21 +2997,82 @@ document.querySelectorAll('.sheet-bg').forEach(bg=>bg.addEventListener('click',e
 
 
 /* ─── LOCK SCREEN ─── */
-const LOCK_PIN = '191291';
+const LOCK_PIN = '191291';  // PIN padrão
 let _lockInput = '';
+let _lockBlocked = false;   // bloqueia input durante animação de erro
 
+/* ── Navegação entre painéis da lock screen ── */
+function showSetup(show){
+  $('lock-setup').style.display = show ? 'block' : 'none';
+  $('lock-pin').style.display   = show ? 'none'  : 'flex';
+  if(show){
+    // Preencher com credenciais salvas, se houver
+    const {url,key} = _sbCredentials();
+    if(url) $('setup-url').value = url;
+    if(key) $('setup-key').value = key;
+    $('setup-error').style.display = 'none';
+  }
+}
+
+/* ── Salvar credenciais Supabase e testar conexão ── */
+async function saveSetupAndTest(){
+  const url = ($('setup-url').value || '').trim();
+  const key = ($('setup-key').value || '').trim();
+  const errEl = $('setup-error');
+  const btn   = $('setup-btn');
+
+  errEl.style.display='none';
+
+  if(!url.startsWith('https://') || !url.includes('.supabase.co')){
+    errEl.textContent = '⚠️ URL inválida. Use o formato: https://xxxx.supabase.co';
+    errEl.style.display='block'; return;
+  }
+  if(key.length < 20){
+    errEl.textContent = '⚠️ Anon Key parece inválida.';
+    errEl.style.display='block'; return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Testando conexão…';
+
+  try {
+    // Salvar temporariamente e testar
+    localStorage.setItem(LS_URL_KEY, url);
+    localStorage.setItem(LS_KEY_KEY, key);
+    _resetSB(); // forçar recriação do client com novas credenciais
+
+    const ok = await checkSupabaseConnection();
+    if(ok){
+      btn.textContent = '✅ Conectado!';
+      setTimeout(()=>{ showSetup(false); }, 800);
+    } else {
+      errEl.textContent = '❌ Não foi possível conectar. Verifique as credenciais e se o RLS está configurado.';
+      errEl.style.display='block';
+      btn.disabled=false;
+      btn.textContent='🔌 Conectar e Salvar';
+    }
+  } catch(e){
+    errEl.textContent = '❌ Erro: ' + e.message;
+    errEl.style.display='block';
+    btn.disabled=false;
+    btn.textContent='🔌 Conectar e Salvar';
+  }
+}
+
+/* ── Numpad PIN ── */
 function lockKey(digit){
-  if(_lockInput.length >= 6) return;
+  if(_lockBlocked || _lockInput.length >= 6) return;
   _lockInput += digit;
   updateLockDots();
   if(_lockInput.length === 6) setTimeout(checkLockPin, 80);
 }
 function lockDel(){
-  if(!_lockInput.length) return;
+  if(_lockBlocked || !_lockInput.length) return;
   _lockInput = _lockInput.slice(0,-1);
   updateLockDots();
 }
 function lockClear(){
+  if(_lockBlocked) return;
   _lockInput = '';
   updateLockDots();
   $('lock-error').style.display='none';
@@ -2953,43 +3084,89 @@ function updateLockDots(){
     d.classList.remove('error');
   }
 }
+
 function checkLockPin(){
   if(_lockInput === LOCK_PIN){
+    // PIN correto — desbloquear e inicializar o app
     sessionStorage.setItem('fd-auth','1');
     const ls=$('lock-screen');
-    ls.style.animation='lockUnlock .35s ease forwards';
-    setTimeout(()=>{ ls.style.display='none'; },340);
+    ls.style.animation='lockUnlock .4s ease forwards';
+    setTimeout(()=>{
+      ls.style.display='none';
+      initApp(); // inicializar app APENAS após desbloqueio
+    }, 380);
   } else {
+    _lockBlocked = true;
     for(let i=0;i<6;i++) $('ld-'+i).classList.add('error');
     $('lock-error').style.display='block';
     setTimeout(()=>{
       _lockInput='';
+      _lockBlocked=false;
       updateLockDots();
-    }, 800);
+    }, 900);
   }
+}
+
+/* ── Logout ── */
+function logout(){
+  sessionStorage.removeItem('fd-auth');
+  _lockInput='';
+  _lockBlocked=false;
+  const ls=$('lock-screen');
+  ls.style.animation='';
+  ls.style.display='flex';
+  updateLockDots();
+  $('lock-error').style.display='none';
+  showSetup(false);
+  toast('🔒 Sessão encerrada');
 }
 
 /* ─── SERVICE WORKER ─── */
 if('serviceWorker'in navigator) navigator.serviceWorker.register('./sw.js').catch(()=>{});
 
-/* ─── BOOT ─── */
+/* ─── BOOT — 2 fases ─── */
+
+// Fase 1: apenas lock screen + verificar conexão Supabase
+// Roda imediatamente ao carregar a página
 async function boot(){
-  // Auth gate
-  if(sessionStorage.getItem('fd-auth')==='1'){
+  // Verificar se já autenticado nesta sessão
+  const authenticated = sessionStorage.getItem('fd-auth') === '1';
+
+  // Verificar conexão Supabase em background (não bloqueia o PIN)
+  checkSupabaseConnection().then(ok => {
+    if(!_sbConfigured()){
+      // Não configurado: mostrar tela de setup diretamente
+      if(!authenticated) showSetup(true);
+    }
+  });
+
+  if(authenticated){
+    // Já autenticado: ocultar lock e carregar app
     $('lock-screen').style.display='none';
+    await initApp();
   }
-  // Verificar conexão Supabase
-  await checkSupabaseConnection();
-  // App init
-  await openDB();
-  await seedIfEmpty();
-  await loadCats();
-  await loadParties();
-  await loadAccounts();
-  await initYearFilter();
-  renderDash();
+  // Se não autenticado: aguardar o PIN (lockKey → checkLockPin → initApp)
 }
-window.addEventListener('load',boot);
+
+// Fase 2: inicializar o app completo (só chamado APÓS autenticação)
+async function initApp(){
+  try {
+    await openDB();
+    await seedIfEmpty();
+    await loadCats();
+    await loadParties();
+    await loadAccounts();
+    await initYearFilter();
+    renderDash();
+    // Atualizar indicador Supabase na sidebar
+    checkSupabaseConnection();
+  } catch(e){
+    console.error('initApp error:', e);
+    toast('❌ Erro ao inicializar: ' + e.message, 5000);
+  }
+}
+
+window.addEventListener('load', boot);
 </script>
 </body>
 </html>
