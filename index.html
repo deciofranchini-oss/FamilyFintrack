@@ -1948,39 +1948,8 @@ canvas { cursor: default; }
       <div class="settings-section">
         <div style="font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px;padding-left:4px">🔐 Segurança</div>
         <div class="settings-card">
-          <div class="settings-row">
-            <div class="settings-row-icon" style="background:var(--accent-lt)">🔑</div>
-            <div class="settings-row-info">
-              <div class="settings-row-label">Masterpin</div>
-              <div class="settings-row-sub">PIN de 6 dígitos para acesso ao app</div>
-            </div>
-            <div class="settings-row-action">
-              <button class="btn btn-ghost btn-sm" onclick="openChangePinModal()">Alterar PIN</button>
-            </div>
-          </div>
-          <div class="settings-row">
-            <div class="settings-row-icon" style="background:var(--amber-lt)">⏱️</div>
-            <div class="settings-row-info">
-              <div class="settings-row-label">Bloqueio automático</div>
-              <div class="settings-row-sub" id="autoLockLabel">Após 5 minutos de inatividade</div>
-            </div>
-            <div class="settings-row-action">
-              <select id="autoLockSelect" onchange="saveAutoLock()" style="font-size:.82rem;padding:5px 8px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface)">
-                <option value="0">Nunca</option>
-                <option value="1">1 minuto</option>
-                <option value="5" selected>5 minutos</option>
-                <option value="15">15 minutos</option>
-                <option value="30">30 minutos</option>
-                <option value="60">1 hora</option>
-              </select>
-            </div>
-          </div>
-          <div class="settings-row">
-            <div class="settings-row-icon" style="background:var(--red-lt)">🚪</div>
-            <div class="settings-row-info">
-              <div class="settings-row-label">Bloquear agora</div>
-              <div class="settings-row-sub">Retorna à tela de Masterpin</div>
-            </div>
+          
+          
             <div class="settings-row-action">
               <button class="btn btn-sm" onclick="lockApp()" style="background:var(--red-lt);color:var(--red);border:1px solid rgba(192,57,43,.2)">Bloquear</button>
             </div>
@@ -5982,14 +5951,14 @@ function initEmailJSStatus() {
 }
 
 
-let _pinBuffer = '';
-let _pinUnlocked = false;
-let _autoLockTimer = null;
-let _autoLockMinutes = parseInt(localStorage.getItem('autoLockMinutes') || '5');
+// (Lock screen removed; keep only master PIN storage for settings.)
 
 // ── PIN Screen logic ─────────────────────────────────────────
+const DEFAULT_MASTER_PIN = '000000';
+
 function getMasterPin() {
-  return localStorage.getItem('masterpin') || DEFAULT_PIN;
+  const v = localStorage.getItem('masterPin') || localStorage.getItem('masterpin');
+  return (v && String(v).trim()) ? String(v).trim() : DEFAULT_MASTER_PIN;
 }
 
 
@@ -6114,37 +6083,19 @@ async function unlockApp() {
   document.addEventListener('keydown', resetAutoLockTimer, { passive: true });
 }
 
-function lockApp() {
-  // Lock screen removed
-  _pinUnlocked = true;
-  _pinBuffer = '';
-  clearAutoLockTimer();
-  try { const ps = document.getElementById('pinScreen'); if(ps) ps.style.display='none'; } catch(e){}
-}
+function lockApp() { /* lock screen removed */ }
+
 
 // ── Auto-lock ─────────────────────────────────────────────────
-function resetAutoLockTimer() {
-  // Lock screen removed
-  return;
-}
+function resetAutoLockTimer() { /* auto-lock removed */ }
+
 
 function clearAutoLockTimer() {
   if(_autoLockTimer) { clearTimeout(_autoLockTimer); _autoLockTimer = null; }
 }
 
-function saveAutoLock() {
-  const sel = document.getElementById('autoLockSelect');
-  if(!sel) return;
-  _autoLockMinutes = parseInt(sel.value);
-  localStorage.setItem('autoLockMinutes', _autoLockMinutes);
-  resetAutoLockTimer();
-  const label = document.getElementById('autoLockLabel');
-  if(label) {
-    const opts = {0:'Bloqueio automático desativado',1:'Após 1 minuto',5:'Após 5 minutos',15:'Após 15 minutos',30:'Após 30 minutos',60:'Após 1 hora'};
-    label.textContent = opts[_autoLockMinutes] || '';
-  }
-  toast('Bloqueio automático salvo!','success');
-}
+function saveAutoLock() { /* auto-lock removed */ }
+
 
 // ── Change PIN modal ──────────────────────────────────────────
 let _pinModalStep = 1;
@@ -6225,8 +6176,9 @@ function advancePinStep() {
       return;
     }
     // Save new PIN
-    localStorage.setItem('masterpin', _pinModalNew);
-    toast('Masterpin alterado com sucesso! 🔐','success');
+    localStorage.setItem('masterPin', _pinModalNew);
+        localStorage.removeItem('masterpin');
+toast('Masterpin alterado com sucesso! 🔐','success');
     closeModal('changePinModal');
   }
 }
@@ -6234,9 +6186,6 @@ function advancePinStep() {
 // ── Settings page ─────────────────────────────────────────────
 function loadSettings() {
   loadAutoCheckConfig(); // Load automation settings
-  // Update auto-lock select
-  const sel = document.getElementById('autoLockSelect');
-  if(sel) sel.value = String(_autoLockMinutes);
   // Update supabase status
   const url = localStorage.getItem('sb_url') || '';
   const statusEl = document.getElementById('supabaseStatusLabel');
