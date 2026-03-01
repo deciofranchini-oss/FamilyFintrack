@@ -1140,10 +1140,8 @@ canvas { cursor: default; }
 <!-- ══════ LOGIN SCREEN ══════ -->
 <div class="auth-screen" id="authScreen" style="display:none">
   <div class="auth-card">
-    <div class="auth-logo" aria-label="Logo">
-      <div class="sidebar-logo-mark" style="justify-content:center;gap:10px;margin-bottom:10px">
-        <div class="logo-icon">JF</div>
-      </div>
+    <div class="auth-logo">
+      <img id="authLogoImg" src="" alt="FinTrack" onerror="this.style.display='none'">
     </div>
     <div class="auth-title">J.F. Family FinTrack</div>
     <div class="auth-sub" id="authSubtitle">Personal Finance Management</div>
@@ -1166,14 +1164,6 @@ canvas { cursor: default; }
         <input type="password" id="authPassword" placeholder="••••••••" autocomplete="current-password"
           onkeydown="if(event.key==='Enter')doLogin()">
       </div>
-      <div class="auth-field" style="margin-top:10px">
-        <label style="display:flex;align-items:center;gap:10px;font-weight:600">
-          <input type="checkbox" id="authRemember" style="width:16px;height:16px">
-          Lembrar usuário e senha neste dispositivo
-        </label>
-        <div style="font-size:.72rem;color:#9b948d;margin-top:6px">Dica: use apenas em dispositivos pessoais.</div>
-      </div>
-
       <button class="auth-btn" onclick="doLogin()" id="authLoginBtn">Entrar</button>
     </div>
 
@@ -2202,10 +2192,10 @@ canvas { cursor: default; }
 <!-- EMAILJS CONFIG MODAL -->
 
   <!-- ═══════════ LOGIN SCREEN ═══════════ -->
-  <div id="loginScreen" style="display:none;position:fixed;inset:0;background:linear-gradient(135deg,#0d3d2b 0%,#1e5c42 60%,#0d3d2b 100%);z-index:9999;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:24px">
+  <div id="loginScreen" style="display:none;position:fixed;inset:0;background:linear-gradient(135deg,#0d3d2b 0%,#1e5c42 60%,#0d3d2b 100%);z-index:9999;align-items:center;justify-content:center;flex-direction:column;padding:24px">
     <div style="width:100%;max-width:400px;background:#fff;border-radius:20px;padding:36px 32px;box-shadow:0 24px 80px rgba(0,0,0,.35)">
       <div style="text-align:center;margin-bottom:28px">
-        <div class="sidebar-logo-mark" style="justify-content:center;gap:10px;margin:0 0 10px 0"><div class="logo-icon">JF</div></div>
+        <img id="loginLogoImg" src="" alt="Logo" style="width:120px;height:auto;object-fit:contain;margin-bottom:12px">
         <div style="font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#9ca3af">Personal Finance Management</div>
       </div>
       <div id="loginFormArea">
@@ -2224,14 +2214,10 @@ canvas { cursor: default; }
             onkeydown="if(event.key==='Enter')doLogin()">
           <button onclick="toggleLoginPwd()" style="position:absolute;right:12px;bottom:11px;background:none;border:none;cursor:pointer;font-size:1rem;color:#9ca3af">👁</button>
         </div>
-        <div style="margin:10px 0 14px 0">
-          <label style="display:flex;align-items:center;gap:10px;font-weight:600">
-            <input type="checkbox" id="loginRemember" style="width:16px;height:16px">
-            Lembrar usuário e senha
-          </label>
-          <div style="font-size:.72rem;color:#9b948d;margin-top:6px">Use apenas em dispositivos pessoais.</div>
+        <div style="display:flex;align-items:center;margin-bottom:16px;gap:8px">
+          <input type="checkbox" id="rememberMe" style="width:16px;height:16px;accent-color:#2a6049;cursor:pointer;flex-shrink:0">
+          <label for="rememberMe" style="font-size:.82rem;color:#6b7280;cursor:pointer;user-select:none">Lembrar meu e-mail e senha</label>
         </div>
-
         <button onclick="doLogin()" id="loginBtn"
           style="width:100%;padding:13px;background:linear-gradient(135deg,#1e5c42,#2a6049);color:#fff;border:none;border-radius:10px;font-size:.95rem;font-weight:600;cursor:pointer;transition:all .15s;font-family:inherit">
           Entrar
@@ -7138,26 +7124,6 @@ async function executeClearDatabase() {
 
 let currentUser = null;  // { id, email, name, role, can_*, must_change_pwd }
 
-// ── Small DOM helper (supports legacy + new IDs) ──
-function $id(...ids){
-  for(const id of ids){
-    const el = document.getElementById(id);
-    if(el) return el;
-  }
-  return null;
-}
-
-const REMEMBER_KEY = 'fintrack_remember_v1';
-function loadRememberedCreds(){
-  try { return JSON.parse(localStorage.getItem(REMEMBER_KEY) || 'null'); } catch { return null; }
-}
-function saveRememberedCreds(email, password){
-  localStorage.setItem(REMEMBER_KEY, JSON.stringify({ email, password, savedAt: new Date().toISOString() }));
-}
-function clearRememberedCreds(){
-  localStorage.removeItem(REMEMBER_KEY);
-}
-
 // ── SHA-256 helper (Web Crypto API) ──
 async function sha256(str) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
@@ -7166,48 +7132,62 @@ async function sha256(str) {
 
 // ── Show / hide login screen ──
 function showLoginScreen() {
-  const screen = $id('authScreen','loginScreen');
-  if(!screen) return;
-
-  screen.style.display = 'flex';
-
-  // Legacy image logo (if still present)
-  const img = $id('authLogoImg','loginLogoImg');
-  if (img) img.src = LOGO_URL;
-
-  // Autofill remembered credentials (optional)
-  const remembered = loadRememberedCreds();
-  const emailEl = $id('authEmail','loginEmail');
-  const passEl  = $id('authPassword','loginPassword');
-  const rememberChk = $id('authRemember','loginRemember');
-
-  if (remembered?.email && emailEl) emailEl.value = remembered.email;
-  if (remembered?.password && passEl) passEl.value = remembered.password;
-  if (rememberChk) rememberChk.checked = !!(remembered?.email && remembered?.password);
-
-  setTimeout(() => emailEl?.focus(), 100);
+  const ls = document.getElementById('loginScreen');
+  if (ls) {
+    ls.style.display = 'flex';
+    // Fix logo: use same LOGO_URL used throughout the app
+    const img = document.getElementById('loginLogoImg');
+    if (img) img.src = LOGO_URL;
+    // Load remembered credentials
+    const saved = _loadRememberedCredentials();
+    if (saved) {
+      const emailEl = document.getElementById('loginEmail');
+      const passEl  = document.getElementById('loginPassword');
+      const remEl   = document.getElementById('rememberMe');
+      if (emailEl) emailEl.value = saved.email || '';
+      if (passEl)  passEl.value  = saved.password || '';
+      if (remEl)   remEl.checked = true;
+    }
+    setTimeout(() => {
+      const emailEl = document.getElementById('loginEmail');
+      if (emailEl && !emailEl.value) emailEl.focus();
+      else document.getElementById('loginPassword')?.focus();
+    }, 100);
+  }
+}
+function _saveRememberedCredentials(email, password) {
+  try {
+    // Encode credentials with btoa for basic obfuscation (not encryption)
+    const data = btoa(JSON.stringify({ email, password }));
+    localStorage.setItem('ft_remember_me', data);
+  } catch(e) {}
+}
+function _loadRememberedCredentials() {
+  try {
+    const data = localStorage.getItem('ft_remember_me');
+    if (!data) return null;
+    return JSON.parse(atob(data));
+  } catch(e) { return null; }
+}
+function _clearRememberedCredentials() {
+  localStorage.removeItem('ft_remember_me');
 }
 function hideLoginScreen() {
-  const screen = $id('authScreen','loginScreen');
-  if (screen) screen.style.display = 'none';
+  const ls = document.getElementById('loginScreen');
+  if (ls) ls.style.display = 'none';
 }
 function toggleLoginPwd() {
-  const inp = $id('authPassword','loginPassword');
+  const inp = document.getElementById('loginPassword');
   if (inp) inp.type = inp.type === 'password' ? 'text' : 'password';
 }
-// ── Login ──
+
 // ── Login ──
 async function doLogin() {
-  const emailEl = $id('authEmail','loginEmail');
-  const passEl  = $id('authPassword','loginPassword');
-  const errEl   = $id('authError','loginError');
-  const btn     = $id('authLoginBtn','loginBtn');
-  const rememberChk = $id('authRemember','loginRemember');
-
-  const email    = (emailEl?.value || '').trim().toLowerCase();
-  const password = (passEl?.value || '');
-
-  if (errEl) errEl.style.display = 'none';
+  const email    = document.getElementById('loginEmail').value.trim().toLowerCase();
+  const password = document.getElementById('loginPassword').value;
+  const errEl    = document.getElementById('loginError');
+  const btn      = document.getElementById('loginBtn');
+  errEl.style.display = 'none';
   if (!email || !password) { showLoginErr('Preencha e-mail e senha.'); return; }
 
   btn.disabled = true; btn.textContent = 'Verificando...';
@@ -7246,6 +7226,13 @@ async function doLogin() {
 
     // Success — set session
     currentUser = user;
+    // Handle "Remember me"
+    const rememberMe = document.getElementById('rememberMe')?.checked;
+    if (rememberMe) {
+      _saveRememberedCredentials(email, document.getElementById('loginPassword').value);
+    } else {
+      _clearRememberedCredentials();
+    }
     await sb.from('app_users').update({ last_login: new Date().toISOString() }).eq('id', user.id);
     // Save session token
     const token = Array.from(crypto.getRandomValues(new Uint8Array(32))).map(b=>b.toString(16).padStart(2,'0')).join('');
@@ -7254,20 +7241,10 @@ async function doLogin() {
     localStorage.setItem('ft_session_token', token);
     localStorage.setItem('ft_user_id', user.id);
 
-    // Remember credentials (optional)
-    try{
-      if(rememberChk?.checked) saveRememberedCreds(email, password);
-      else clearRememberedCreds();
-    }catch{}
-
     if (user.must_change_pwd) {
       // Show password change form
-      const loginForm = $id('authLoginForm','loginFormArea');
-      const changeForm = $id('authChangePwForm','changePwdArea');
-      const banner = $id('authChangePwBanner');
-      if (loginForm) loginForm.style.display = 'none';
-      if (changeForm) changeForm.style.display = '';
-      if (banner) banner.style.display = '';
+      document.getElementById('loginFormArea').style.display = 'none';
+      document.getElementById('changePwdArea').style.display = '';
     } else {
       onLoginSuccess();
     }
@@ -7278,24 +7255,24 @@ async function doLogin() {
   }
 }
 function showLoginErr(msg) {
-  const el = $id('authError','loginError');
+  const el = document.getElementById('loginError');
   if (el) { el.textContent = msg; el.style.display = ''; }
 }
 
 // ── Change password (first login) ──
 async function doChangePwd() {
-  const p1 = ($id('authNewPw1','newPwd1')?.value || '');
-  const p2 = ($id('authNewPw2','newPwd2')?.value || '');
-  const errEl = $id('authError','changePwdError');
-  if (errEl) errEl.style.display = 'none';
-  if (p1.length < 8) { showLoginErr('A senha deve ter pelo menos 8 caracteres.'); return; }
-  if (p1 !== p2)     { showLoginErr('As senhas não coincidem.'); return; }
+  const p1 = document.getElementById('newPwd1').value;
+  const p2 = document.getElementById('newPwd2').value;
+  const errEl = document.getElementById('changePwdError');
+  errEl.style.display = 'none';
+  if (p1.length < 8) { errEl.textContent = 'A senha deve ter pelo menos 8 caracteres.'; errEl.style.display=''; return; }
+  if (p1 !== p2)     { errEl.textContent = 'As senhas não coincidem.'; errEl.style.display=''; return; }
   try {
     const hash = await sha256(p1);
     await sb.from('app_users').update({ password_hash: hash, must_change_pwd: false }).eq('id', currentUser.id);
     currentUser.must_change_pwd = false;
     onLoginSuccess();
-  } catch(e) { showLoginErr('Erro: ' + (e?.message||e)); }
+  } catch(e) { errEl.textContent = 'Erro: ' + e.message; errEl.style.display=''; }
 }
 
 // ── Change my own password (from settings) ──
