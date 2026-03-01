@@ -6391,7 +6391,7 @@ function parseMoneyWizRows(rows) {
         tags:            tags || null,
         running_balance: parseMWAmt(clean(r[14])),
         is_transfer:     !!xfer,
-        moneywiz_key:    `${accName}|${dt}|${tm}|${amt}|${desc}`,
+        moneywiz_key:    `${accName}|${dt}|${amt.toFixed(2)}|${desc}`,
       };
       transactions.push(tx);
       acc.transactions.push(tx);
@@ -6403,13 +6403,61 @@ function parseMoneyWizRows(rows) {
 }
 function parseMWAmt(s) {
   if (!s) return 0;
-  const v = parseFloat(String(s).replace(/\./g,'').replace(',','.').replace(/[^\d.\-]/g,''));
-  return isNaN(v) ? 0 : v;
+  const str = String(s).replace(/\xa0/g,' ').trim();
+  // Detect negative: leading minus, trailing minus, or parentheses (accounting format)
+  const isNeg = str.startsWith('-') || str.endsWith('-') || (str.startsWith('(') && str.endsWith(')'));
+  // Remove currency symbols, spaces, parentheses, thousands separators (dot in pt-BR)
+  // Then replace comma decimal separator with dot
+  let clean = str.replace(/[()R$€£¥\s]/g,'').replace(/-/g,'');
+  // pt-BR: dots are thousands sep, comma is decimal → "1.234,56" → "1234.56"
+  // en-US / ISO: commas are thousands sep, dot is decimal → "1,234.56" → "1234.56"
+  if (/,\d{2}$/.test(clean)) {
+    // Has comma before 2 digits at end → comma is decimal separator (pt-BR style)
+    clean = clean.replace(/\./g,'').replace(',','.');
+  } else {
+    // Dot is decimal or no decimal at all → just remove commas
+    clean = clean.replace(/,/g,'');
+  }
+  const v = parseFloat(clean);
+  if (isNaN(v)) return 0;
+  return isNeg ? -Math.abs(v) : v;
 }
 function parseMWDate(s) {
   if (!s) return null;
-  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  return m ? `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}` : s;
+  const str = String(s).trim();
+  // Already ISO format YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}/.test(str)) return str.slice(0,10);
+  // DD/MM/YYYY (MoneyWiz pt-BR export)
+  let m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) {
+    const [,d,mo,y] = m;
+    // Disambiguate: if first number > 12 it must be day (DD/MM/YYYY)
+    if (parseInt(d) > 12) return `${y}-${mo.padStart(2,'0')}-${d.padStart(2,'0')}`;
+    // Default: assume DD/MM/YYYY (MoneyWiz pt-BR)
+    return `${y}-${mo.padStart(2,'0')}-${d.padStart(2,'0')}`;
+  }
+  // MM/DD/YYYY (US format)
+  m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (m) {
+    const [,mo,d,y] = m;
+    const fullY = y.length === 2 ? '20'+y : y;
+    return `${fullY}-${mo.padStart(2,'0')}-${d.padStart(2,'0')}`;
+  }
+  // DD.MM.YYYY (European dot format)
+  m = str.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (m) {
+    const [,d,mo,y] = m;
+    return `${y}-${mo.padStart(2,'0')}-${d.padStart(2,'0')}`;
+  }
+  // Excel serial number (days since 1899-12-30)
+  if (/^\d{4,6}$/.test(str)) {
+    const serial = parseInt(str);
+    if (serial > 40000 && serial < 60000) { // sanity check: years ~2009-2064
+      const d = new Date((serial - 25569) * 86400 * 1000);
+      return d.toISOString().slice(0,10);
+    }
+  }
+  return null;
 }
 function inferAccType(name) {
   const n = name.toLowerCase();
@@ -6645,7 +6693,7 @@ async function stageTransactions(allTx, out) {
     let action = 'insert', reason = null;
     if (mode === 'new') {
       const co = cutoffs[tx.account_name.toLowerCase()];
-      if (co && tx.date <= co) { action = 'skip'; reason = `Antes de ${co}`; }
+      if (co && tx.date < co) { action = 'skip'; reason = `Antes de ${co}`; }
     } else if (mode === 'update') {
       if (exKeys.has(tx.moneywiz_key)) action = 'update';
     }
@@ -6805,32 +6853,57 @@ async function commitImport() {
 }
 
 async function commitTransactions(txList) {
+  // Reload all entity maps so that accounts/categories/payees created in this
+  // same import run are available for lookup (fixes "account not found → null" bug)
+  await Promise.all([loadAccounts(), loadCategories(), loadPayees()]);
+
   const accMap = {}, catMap = {}, payMap = {};
-  state.accounts.forEach(a => accMap[a.name.toLowerCase()] = a);
+  state.accounts.forEach(a  => accMap[a.name.toLowerCase()] = a);
   state.categories.forEach(c => catMap[c.name.toLowerCase()] = c);
-  state.payees.forEach(p => payMap[p.name.toLowerCase()] = p);
+  state.payees.forEach(p    => payMap[p.name.toLowerCase()] = p);
+
   const toIns = txList.filter(t => t.action === 'insert');
   const toUpd = txList.filter(t => t.action === 'update');
-  let created = 0, updated = 0, errors = 0;
+  let created = 0, updated = 0, errors = 0, skipped = 0;
+
   for (let i = 0; i < toIns.length; i += 100) {
     setImportProgress(55 + Math.floor(i / Math.max(toIns.length,1) * 30), `Inserindo ${i}–${Math.min(i+100,toIns.length)}…`);
-    const batch = toIns.slice(i, i+100).map(tx => buildTxRecord(tx, accMap, catMap, payMap)).filter(Boolean);
-    if (!batch.length) continue;
-    const { error } = await sb.from('transactions').insert(batch);
+    const batch = toIns.slice(i, i+100).map(tx => buildTxRecord(tx, accMap, catMap, payMap));
+    const valid = batch.filter(Boolean);
+    skipped += batch.length - valid.length;
+    if (!valid.length) continue;
+    const { error } = await sb.from('transactions').insert(valid);
     if (error) { importLogMsg('err', `Batch ${i}: ${error.message}`); errors++; }
-    else created += batch.length;
+    else created += valid.length;
   }
   for (const tx of toUpd) {
-    const rec = buildTxRecord(tx, accMap, catMap, payMap); if (!rec) continue;
+    const rec = buildTxRecord(tx, accMap, catMap, payMap);
+    if (!rec) { skipped++; continue; }
     const { error } = await sb.from('transactions').update(rec).eq('moneywiz_key', tx.moneywiz_key);
     if (error) errors++; else updated++;
   }
+  if (skipped > 0) importLogMsg('warn', `⚠️ ${skipped} transações ignoradas — conta não encontrada (verifique mapeamento)`);
   importLogMsg('ok', `✓ ${created} criadas · ${updated} atualizadas · ${errors} erros`);
 }
 function buildTxRecord(tx, accMap, catMap, payMap) {
-  const acc = accMap[tx.account_name?.toLowerCase()]; if (!acc) return null;
-  const catLeaf = tx.category_path ? tx.category_path.split('►').pop().trim().toLowerCase() : null;
-  const cat = catLeaf ? catMap[catLeaf] : null;
+  const acc = accMap[tx.account_name?.toLowerCase()];
+  if (!acc) {
+    console.warn('[import] account not found for tx:', tx.account_name, tx.description, tx.date);
+    return null;
+  }
+  // Category: try leaf of path (supports both ► and > as separators)
+  let cat = null;
+  if (tx.category_path) {
+    const separators = ['►', '>', '/', '\\'];
+    let leaf = tx.category_path;
+    for (const sep of separators) {
+      if (tx.category_path.includes(sep)) {
+        leaf = tx.category_path.split(sep).pop().trim();
+        break;
+      }
+    }
+    cat = catMap[leaf.toLowerCase()] || catMap[tx.category_path.toLowerCase()] || null;
+  }
   const pay = tx.payee_name ? payMap[tx.payee_name.toLowerCase()] : null;
   return {
     account_id:   acc.id,
@@ -6841,7 +6914,7 @@ function buildTxRecord(tx, accMap, catMap, payMap) {
     payee_id:     pay?.id || null,
     memo:         tx.memo || null,
     is_transfer:  tx.is_transfer || false,
-    tags:         tx.tags || null,
+    tags:         tx.tags ? (Array.isArray(tx.tags) ? tx.tags : [tx.tags]) : null,
     moneywiz_key: tx.moneywiz_key || null,
     currency:     tx.currency || acc.currency || 'BRL',
   };
