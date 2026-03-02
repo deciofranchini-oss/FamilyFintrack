@@ -87,6 +87,9 @@ body{font-family:var(--font-sans);background:var(--bg);color:var(--text);height:
 .account-group-sum{font-family:var(--font-serif);font-size:.9rem;font-weight:500;color:var(--accent);}
 .account-group-actions{display:none;gap:4px;}
 .account-group-header:hover .account-group-actions{display:flex;}
+.group-bar-btn{display:inline-flex;align-items:center;gap:4px;padding:4px 12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm,8px);font-size:.8rem;cursor:pointer;transition:box-shadow .15s,background .15s;}
+.group-bar-btn:hover{background:var(--accent-lt);border-color:var(--accent);box-shadow:var(--shadow-sm);}
+.group-bar-count{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;background:var(--border2);border-radius:99px;font-size:.7rem;font-weight:700;}
 .account-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:18px;cursor:pointer;transition:all .18s;position:relative;overflow:hidden;box-shadow:var(--shadow-sm);}
 .account-card-stripe{position:absolute;top:0;left:0;right:0;height:3px;border-radius:var(--r) var(--r) 0 0;}
 .account-card:hover{border-color:var(--border2);box-shadow:var(--shadow);transform:translateY(-1px);}
