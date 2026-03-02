@@ -149,10 +149,10 @@ BEGIN
         -- Registrar a transação
         INSERT INTO transactions (
           account_id, description, amount, date,
-          category_id, payee_id, memo, is_transfer
+          category_id, payee_id, memo, is_transfer, transfer_to_account_id, transfer_kind
         ) VALUES (
           v_sc.account_id, v_sc.description, v_sc.amount, v_next_date,
-          v_sc.category_id, v_sc.payee_id, v_sc.memo, false
+          v_sc.category_id, v_sc.payee_id, v_sc.memo, (v_sc.type IN ('transfer','cc_payment')), v_sc.transfer_to_account_id, CASE WHEN v_sc.type='cc_payment' THEN 'cc_payment' WHEN v_sc.type='transfer' THEN 'transfer' ELSE NULL END
         );
 
         -- Marcar ocorrência como registrada

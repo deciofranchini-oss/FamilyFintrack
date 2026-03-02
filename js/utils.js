@@ -1,6 +1,6 @@
 function populateSelects(){populateReportFilters();
   const aOpts=state.accounts.map(a=>`<option value="${a.id}">${esc(a.name)} (${a.currency})</option>`).join('');
-  ['txAccountId','txTransferTo'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML='<option value="">Selecione a conta</option>'+aOpts;});
+  ['txAccountId','txTransferTo','scAccountId','scTransferTo'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML='<option value="">Selecione a conta</option>'+aOpts;});
   const txAF=document.getElementById('txAccount');if(txAF)txAF.innerHTML='<option value="">Todas as contas</option>'+aOpts;
   // payee autocomplete uses state.payees directly - no select to populate
   buildCatPicker(); // hierarchical picker replaces flat select

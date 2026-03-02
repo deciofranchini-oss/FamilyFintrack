@@ -11,16 +11,17 @@ function toggleDashGroup(key) {
 
 async function loadDashboard(){
   const now=new Date(),y=now.getFullYear(),m=String(now.getMonth()+1).padStart(2,'0');
-  const{data:monthTxs}=await famQ(sb.from('transactions').select('amount,is_transfer')).gte('date',`${y}-${m}-01`).lte('date',`${y}-${m}-31`);
-  let income=0,expense=0;(monthTxs||[]).filter(t=>!t.is_transfer).forEach(t=>{if(t.amount>0)income+=t.amount;else expense+=Math.abs(t.amount);});
+  const{data:monthTxs}=await famQ(sb.from('transactions').select('amount,is_transfer,transfer_kind')).gte('date',`${y}-${m}-01`).lte('date',`${y}-${m}-31`);
+  let income=0,expense=0;(monthTxs||[]).filter(t=>!t.is_transfer || t.transfer_kind==='cc_payment').forEach(t=>{if(!t.is_transfer){if(t.amount>0)income+=t.amount;else expense+=Math.abs(t.amount);} else {expense+=Math.abs(t.amount||0);} });
   // Patrimônio: soma dos saldos de todas as contas ativas (já carregadas em state)
   await loadAccounts(); // garante dados frescos
+  await refreshAccountBalances({persist:true}); // recalcula com base nas transações
   const total = state.accounts.reduce((s,a)=>{
     return s + (parseFloat(a.balance)||0);
   },0);
   document.getElementById('statTotal').textContent=fmt(total,'BRL');document.getElementById('statIncome').textContent=fmt(income);document.getElementById('statExpenses').textContent=fmt(expense);
   const bal=income-expense,balEl=document.getElementById('statBalance');balEl.textContent=fmt(bal);balEl.className='stat-value '+(bal>=0?'text-green':'text-red');
-  const{data:recent}=await famQ(sb.from('transactions').select('*, accounts!transactions_account_id_fkey(name), categories(name,color)')).order('date',{ascending:false}).limit(10);
+  const{data:recent}=await famQ(sb.from('transactions').select('*, transfer_kind, accounts!transactions_account_id_fkey(name), categories(name,color)')).order('date',{ascending:false}).limit(10);
   const body=document.getElementById('recentTxBody');
   if(!recent?.length){body.innerHTML='<tr><td colspan="4" class="text-muted" style="text-align:center;padding:24px;font-size:.83rem">Sem transações</td></tr>';}
   else body.innerHTML=(recent||[]).map(t=>`<tr><td class="text-muted" style="white-space:nowrap">${fmtDate(t.date)}</td><td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.description||'—')}</td><td>${t.categories?`<span class="badge" style="background:${t.categories.color}18;color:${t.categories.color};border:1px solid ${t.categories.color}28">${esc(t.categories.name)}</span>`:'—'}</td><td class="${t.amount>=0?'amount-pos':'amount-neg'}" style="white-space:nowrap">${fmt(t.amount)}</td></tr>`).join('');
@@ -89,12 +90,12 @@ async function renderCashflowChart(){
   });
   const incomes=[],expenses=[],balances=[];
   for(const{y,m}of months){
-    let q=sb.from('transactions').select('amount,is_transfer')
+    let q=sb.from('transactions').select('amount,is_transfer,transfer_kind')
       .gte('date',`${y}-${m}-01`).lte('date',`${y}-${m}-31`);
     if(accId) q=q.eq('account_id',accId);
     const{data}=await q;
     let inc=0,exp=0;
-    (data||[]).filter(t=>!t.is_transfer).forEach(t=>{if(t.amount>0)inc+=t.amount;else exp+=Math.abs(t.amount);});
+    (data||[]).filter(t=>!t.is_transfer || t.transfer_kind==='cc_payment').forEach(t=>{if(!t.is_transfer){if(t.amount>0)inc+=t.amount;else exp+=Math.abs(t.amount);} else {exp+=Math.abs(t.amount||0);} });
     incomes.push(+inc.toFixed(2));
     expenses.push(+exp.toFixed(2));
     balances.push(+(inc-exp).toFixed(2));

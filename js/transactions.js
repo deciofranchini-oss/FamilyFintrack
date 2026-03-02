@@ -239,7 +239,55 @@ async function loadTransactions(){
   }
   if(f.account)q=q.eq('account_id',f.account);if(f.search)q=q.ilike('description','%'+f.search+'%');
   if(f.type==='income')q=q.gt('amount',0);else if(f.type==='expense')q=q.lt('amount',0);else if(f.type==='transfer')q=q.eq('is_transfer',true);
-  const{data,count,error}=await q;if(error){toast(error.message,'error');return;}state.transactions=data||[];state.txTotal=count||0;renderTransactions();
+  const{data,count,error}=await q;
+  if(error){toast(error.message,'error');return;}
+  state.transactions=data||[];
+  state.txTotal=count||0;
+  renderTransactions();
+  // Show current account balance when filtering by a specific account
+  updateTxAccountBalanceBadge();
+}
+
+// ─────────────────────────────────────────────────────────────
+// UI: current account balance badge (Transactions screen)
+// ─────────────────────────────────────────────────────────────
+let _txBalBusy = false;
+let _txBalLast = 0;
+async function updateTxAccountBalanceBadge(){
+  const el = document.getElementById('txAccountBalanceBadge');
+  if(!el) return;
+  const accountId = state?.txFilter?.account || '';
+  if(!accountId){
+    el.style.display='none';
+    el.textContent='';
+    return;
+  }
+
+  // Best-effort: refresh balances occasionally to avoid showing stale numbers
+  const now = Date.now();
+  if(!_txBalBusy && (now - _txBalLast > 15000)){
+    _txBalBusy = true;
+    try{
+      if(typeof refreshAccountBalances === 'function'){
+        await refreshAccountBalances({ persist:false });
+      }
+      _txBalLast = Date.now();
+    }catch(e){
+      // Ignore refresh errors here; we'll still try to display cached balance
+    }finally{
+      _txBalBusy = false;
+    }
+  }
+
+  const acc = (state.accounts||[]).find(a=>a.id===accountId);
+  if(!acc){
+    el.style.display='none';
+    el.textContent='';
+    return;
+  }
+  const bal = (acc.balance ?? acc.initial_balance ?? 0);
+  el.style.display='';
+  el.textContent = `Saldo atual: ${fmt(bal)}`;
 }
 function filterTransactions(){
   state.txFilter.search=document.getElementById('txSearch').value;
@@ -248,6 +296,7 @@ function filterTransactions(){
   state.txFilter.type=document.getElementById('txType').value;
   state.txPage=0;
   if(state.txView==='flat') document.getElementById('txSummaryBar').style.display='none';
+  updateTxAccountBalanceBadge();
   loadTransactions();
 }
 
@@ -441,19 +490,30 @@ async function editTransaction(id){
   }
   // Check IOF config for account
   setTimeout(()=>checkAccountIofConfig(data.account_id), 50);
-  const type=data.is_transfer?'transfer':data.amount>=0?'income':'expense';setTxType(type);if(type==='transfer')document.getElementById('txTransferTo').value=data.transfer_to_account_id||'';
+  const type = data.is_transfer ? (data.transfer_kind==='cc_payment' ? 'cc_payment' : 'transfer') : (data.amount>=0 ? 'income' : 'expense');setTxType(type);if(type==='transfer')document.getElementById('txTransferTo').value=data.transfer_to_account_id||'';
   document.getElementById('txModalTitle').textContent='Editar Transação';openModal('txModal');
 }
 function setTxType(type){
   document.getElementById('txTypeField').value=type;
-  document.querySelectorAll('#txModal .tab').forEach((t,i)=>t.classList.toggle('active',['expense','income','transfer'][i]===type));
-  const isT=type==='transfer';
-  document.getElementById('txTransferToGroup').style.display=isT?'':'none';document.getElementById('txPayeeGroup').style.display=isT?'none':'';document.getElementById('txCategoryGroup').style.display=isT?'none':'';
+  document.querySelectorAll('#txModal .tab').forEach((t,i)=>t.classList.toggle('active',['expense','income','transfer','cc_payment'][i]===type));
+  const isTransfer = (type==='transfer' || type==='cc_payment');
+  const isCardPay  = (type==='cc_payment');
+  document.getElementById('txTransferToGroup').style.display = isTransfer ? '' : 'none';
+  // Para transferências e pagamento de cartão, não usamos beneficiário.
+  document.getElementById('txPayeeGroup').style.display = isTransfer ? 'none' : '';
+  // Categoria: ocultar para transferência comum; obrigatório para pagamento de cartão
+  document.getElementById('txCategoryGroup').style.display = (type==='transfer') ? 'none' : '';
+  // Ajustar label do campo de destino
+  const lbl = document.querySelector('#txTransferToGroup label');
+  if(lbl) lbl.textContent = isCardPay ? 'Conta do Cartão (Destino) *' : 'Conta Destino *';
 }
+
 async function saveTransaction(){
   const id=document.getElementById('txId').value,type=document.getElementById('txTypeField').value;
   let amount=getAmtField('txAmount');
-  if(type==='expense')amount=-Math.abs(amount);else if(type==='income')amount=Math.abs(amount);
+  if(type==='expense') amount=-Math.abs(amount);
+  else if(type==='income') amount=Math.abs(amount);
+  else if(type==='transfer' || type==='cc_payment') amount=Math.abs(amount);
   const tags=document.getElementById('txTags').value.split(',').map(s=>s.trim()).filter(Boolean);
 
   // Determine attachment fields for the DB record
@@ -474,8 +534,9 @@ async function saveTransaction(){
     category_id:document.getElementById('txCategoryId').value||null,
     memo:document.getElementById('txMemo').value,
     tags:tags.length?tags:null,
-    is_transfer:type==='transfer',
-    transfer_to_account_id:type==='transfer'?document.getElementById('txTransferTo').value||null:null,
+    is_transfer:(type==='transfer'||type==='cc_payment'),
+    transfer_kind:(type==='cc_payment'?'cc_payment':(type==='transfer'?'transfer':null)),
+    transfer_to_account_id:(type==='transfer'||type==='cc_payment')?document.getElementById('txTransferTo').value||null:null,
     // Always write current attachment state; upload will overwrite if there's a pending file
     attachment_url:  existingUrl,
     attachment_name: existingName,
@@ -483,6 +544,13 @@ async function saveTransaction(){
     family_id:famId()
   };
   if(!data.date||!data.account_id){toast('Preencha data e conta','error');return;}
+  if(data.is_transfer){
+    if(!data.transfer_to_account_id){toast('Selecione a conta destino','error');return;}
+    if(data.account_id===data.transfer_to_account_id){toast('Conta origem e destino não podem ser a mesma','error');return;}
+    if(data.transfer_kind==='cc_payment' && !data.category_id){
+      toast('Selecione a categoria de Pagamento de Cartão','error');return;
+    }
+  }
   let err,txResult;
   if(id){({error:err}=await sb.from('transactions').update(data).eq('id',id));}
   else  {({data:txResult,error:err}=await sb.from('transactions').insert(data).select().single());}
@@ -515,6 +583,8 @@ async function saveTransaction(){
   }
   toast(id?'✓ Atualizado!':'✓ Transação salva!','success');
   closeModal('txModal');
+  // Refresh account balances so UI (transactions + dashboard) reflects the latest state
+  try{ await refreshAccountBalances({ persist:true }); }catch(e){}
   if(state.currentPage==='transactions')loadTransactions();
   if(state.currentPage==='dashboard')loadDashboard();
 }
@@ -551,7 +621,15 @@ async function _doDuplicateTx(orig) {
   if (state.currentPage === 'transactions') loadTransactions();
   if (state.currentPage === 'dashboard') loadDashboard();
 }
-async function deleteTransaction(id){if(!confirm('Excluir transação?'))return;const{error}=await sb.from('transactions').delete().eq('id',id);if(error){toast(error.message,'error');return;}toast('Excluída','success');loadTransactions();}
+async function deleteTransaction(id){
+  if(!confirm('Excluir transação?'))return;
+  const{error}=await sb.from('transactions').delete().eq('id',id);
+  if(error){toast(error.message,'error');return;}
+  toast('Excluída','success');
+  try{ await refreshAccountBalances({ persist:true }); }catch(e){}
+  if(state.currentPage==='transactions')loadTransactions();
+  if(state.currentPage==='dashboard')loadDashboard();
+}
 
 /* ── Transaction Detail Drawer ── */
 let _txDetailId = null;

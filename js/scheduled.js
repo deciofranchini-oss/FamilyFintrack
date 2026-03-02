@@ -292,6 +292,12 @@ function openScheduledModal(id='') {
   // Populate account select
   const aEl = document.getElementById('scAccountId');
   aEl.innerHTML = state.accounts.map(a=>`<option value="${a.id}">${esc(a.name)} (${a.currency})</option>`).join('');
+  // Populate destination account (for transfers / card payments)
+  const tEl = document.getElementById('scTransferTo');
+  if(tEl){
+    tEl.innerHTML = '<option value="">Selecione</option>' + state.accounts.map(a=>`<option value="${a.id}">${esc(a.name)} (${a.currency})</option>`).join('');
+    if(sc?.transfer_to_account_id) tEl.value = sc.transfer_to_account_id;
+  }
   if(sc?.account_id) aEl.value = sc.account_id;
 
   // Populate category select
@@ -354,8 +360,19 @@ function openScheduledModal(id='') {
 
 function setScType(type) {
   document.getElementById('scTypeField').value = type;
-  document.querySelectorAll('#scheduledModal .tab').forEach((t,i)=>t.classList.toggle('active',['expense','income'][i]===type));
+  document.querySelectorAll('#scheduledModal .tab').forEach((t,i)=>t.classList.toggle('active',['expense','income','transfer','cc_payment'][i]===type));
+  const isTransfer = (type==='transfer' || type==='cc_payment');
+  const isCardPay  = (type==='cc_payment');
+  const toGrp = document.getElementById('scTransferToGroup');
+  if(toGrp) toGrp.style.display = isTransfer ? '' : 'none';
+  const payeeGrp = document.getElementById('scPayeeGroup');
+  if(payeeGrp) payeeGrp.style.display = isTransfer ? 'none' : '';
+  const catGrp = document.getElementById('scCategoryGroup');
+  if(catGrp) catGrp.style.display = (type==='transfer') ? 'none' : '';
+  const lbl = document.querySelector('#scTransferToGroup label');
+  if(lbl) lbl.textContent = isCardPay ? 'Conta do Cartão (Destino) *' : 'Conta Destino *';
 }
+
 
 function onScFreqChange() {
   const freq = document.querySelector('input[name=scFreq]:checked')?.value || 'once';
@@ -412,8 +429,10 @@ async function saveScheduled() {
   const data = {
     description: document.getElementById('scDesc').value.trim(),
     type,
-    amount: type==='expense' ? -Math.abs(amount) : Math.abs(amount),
+    amount: (type==='expense') ? -Math.abs(amount) : (type==='income' ? Math.abs(amount) : Math.abs(amount)),
     account_id: document.getElementById('scAccountId').value || null,
+    transfer_to_account_id: (type==='transfer' || type==='cc_payment') ? (document.getElementById('scTransferTo')?.value || null) : null,
+    transfer_kind: (type==='cc_payment' ? 'cc_payment' : (type==='transfer' ? 'transfer' : null)),
     payee_id: document.getElementById('scPayeeId').value || null,
     category_id: document.getElementById('scCategoryId').value || null,
     memo: document.getElementById('scMemo').value,
@@ -434,6 +453,11 @@ async function saveScheduled() {
 
   if(!data.description) { toast('Informe a descrição', 'error'); return; }
   if(!data.account_id) { toast('Selecione a conta', 'error'); return; }
+  if(type==='transfer' || type==='cc_payment'){
+    if(!data.transfer_to_account_id){ toast('Selecione a conta destino', 'error'); return; }
+    if(data.transfer_to_account_id===data.account_id){ toast('Conta origem e destino não podem ser a mesma', 'error'); return; }
+    if(type==='cc_payment' && !data.category_id){ toast('Selecione a categoria de Pagamento de Cartão', 'error'); return; }
+  }
   if(!data.start_date) { toast('Informe a data de início', 'error'); return; }
 
   let err;

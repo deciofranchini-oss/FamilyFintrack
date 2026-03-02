@@ -96,7 +96,7 @@ async function saveAccount(){
   const isCC=document.getElementById('accountType').value==='cartao_credito';
   const isBR=isCC&&document.getElementById('accountIsBrazilian').checked;
   const gid=document.getElementById('accountGroupId').value||null;
-  const data={name:document.getElementById('accountName').value.trim(),type:document.getElementById('accountType').value,currency:document.getElementById('accountCurrency').value,balance:getAmtField('accountBalance'),icon:document.getElementById('accountIcon').value||'',color:document.getElementById('accountColor').value,is_brazilian:isBR,iof_rate:isBR?parseFloat(document.getElementById('accountIofRate').value)||3.38:null,group_id:gid,updated_at:new Date().toISOString()};
+  const data={name:document.getElementById('accountName').value.trim(),type:document.getElementById('accountType').value,currency:document.getElementById('accountCurrency').value,initial_balance:getAmtField('accountBalance'), balance:getAmtField('accountBalance'),icon:document.getElementById('accountIcon').value||'',color:document.getElementById('accountColor').value,is_brazilian:isBR,iof_rate:isBR?parseFloat(document.getElementById('accountIofRate').value)||3.38:null,group_id:gid,updated_at:new Date().toISOString()};
   if(!data.name){toast('Informe o nome da conta','error');return;}
   if(!id) data.family_id=famId(); let err;if(id){({error:err}=await sb.from('accounts').update(data).eq('id',id));}else{({error:err}=await sb.from('accounts').insert(data));}
   if(err){toast(err.message,'error');return;}
@@ -165,4 +165,66 @@ async function deleteGroup(id){
   await loadAccounts();
   renderGroupList();
   if(state.currentPage==='accounts')renderAccounts(_accountsViewMode);
+}
+
+
+// ── Balance sync ─────────────────────────────────────────
+// Computes current balances from initial_balance + transactions (including transfers)
+// Updates state.accounts and (optionally) persists accounts.balance to DB as a cache.
+async function refreshAccountBalances({ persist=true } = {}) {
+  try {
+    // Ensure we have accounts loaded
+    if(!state.accounts || !state.accounts.length) await loadAccounts();
+
+    // Pull only needed fields from transactions for speed
+    const {data:txs, error} = await famQ(
+      sb.from('transactions')
+        .select('account_id, amount, is_transfer, transfer_to_account_id, transfer_kind')
+    );
+    if(error){ console.error(error); toast(error.message,'error'); return; }
+
+    const delta = {}; // account_id -> delta
+    (txs||[]).forEach(t=>{
+      const from = t.account_id;
+      const to   = t.transfer_to_account_id;
+      const isT  = !!t.is_transfer;
+      const val  = Math.abs(parseFloat(t.amount)||0);
+
+      if(!isT){
+        delta[from] = (delta[from]||0) + (parseFloat(t.amount)||0);
+        return;
+      }
+
+      // Transfers always debit origin and credit destination
+      if(from) delta[from] = (delta[from]||0) - val;
+      if(to)   delta[to]   = (delta[to]||0)   + val;
+    });
+
+    // Apply to state.accounts
+    const updates = [];
+    state.accounts = (state.accounts||[]).map(a=>{
+      const init = (a.initial_balance ?? a.balance ?? 0);
+      const cur  = +( (parseFloat(init)||0) + (delta[a.id]||0) ).toFixed(2);
+      const out  = {...a, initial_balance: parseFloat(init)||0, balance: cur};
+      if(persist) updates.push({id:a.id, balance:cur, updated_at:new Date().toISOString()});
+      return out;
+    });
+
+    if(persist && updates.length){
+      // Best-effort persistence; ignore failures (RLS / permissions etc.)
+      try {
+        // Chunk updates to avoid payload limits
+        const chunkSize = 100;
+        for(let i=0;i<updates.length;i+=chunkSize){
+          const chunk = updates.slice(i,i+chunkSize);
+          await famQ(sb.from('accounts').upsert(chunk, { onConflict:'id' }));
+        }
+      } catch(e) {
+        console.warn('Could not persist account balances (ok to ignore):', e.message||e);
+      }
+    }
+  } catch(e) {
+    console.error(e);
+    toast('Falha ao recalcular saldos: '+(e.message||e),'error');
+  }
 }
