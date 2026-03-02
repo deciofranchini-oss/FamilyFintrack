@@ -147,6 +147,12 @@ tbody td{padding:11px 14px;vertical-align:middle;}
 /* FORMS */
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
 .form-group{display:flex;flex-direction:column;gap:5px;}
+.amt-wrap{display:flex;gap:0;align-items:stretch;}
+.amt-wrap input{flex:1;border-radius:0 var(--r-sm) var(--r-sm) 0!important;border-left:none!important;}
+.amt-sign-btn{min-width:44px;padding:0 12px;font-size:1.15rem;font-weight:700;border:1.5px solid var(--border);border-right:none;border-radius:var(--r-sm) 0 0 var(--r-sm);background:var(--bg2);color:var(--text2);cursor:pointer;transition:background .15s,color .15s;touch-action:manipulation;-webkit-tap-highlight-color:transparent;}
+.amt-sign-btn:active{background:var(--bg3);}
+.amt-sign-btn.negative{background:var(--red-lt,#fef2f2);color:var(--red,#c0392b);border-color:var(--red,#c0392b);}
+.amt-sign-btn.positive{background:var(--green-lt,#f0fdf4);color:var(--green,#2a7a4a);border-color:var(--green,#2a7a4a);}
 .form-group.full{grid-column:1/-1;}
 label{font-size:.72rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;}
 input:not([type=checkbox]):not([type=radio]),select,textarea{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);padding:9px 12px;font-family:var(--font-sans);font-size:.9rem;color:var(--text);outline:none;transition:border-color .15s;width:100%;-webkit-appearance:none;appearance:none;}input[type=checkbox],input[type=radio]{width:16px;height:16px;flex-shrink:0;cursor:pointer;accent-color:var(--accent);-webkit-appearance:auto;appearance:auto;}
@@ -2646,7 +2652,7 @@ canvas { cursor: default; }
       <div class="form-grid">
         <!-- Basic info -->
         <div class="form-group full"><label>Descrição *</label><input type="text" id="scDesc" placeholder="Ex: Aluguel, Salário..."></div>
-        <div class="form-group"><label>Valor *</label><input type="text" id="scAmount" inputmode="decimal" placeholder="0,00" pattern="[\-0-9.,]*" autocomplete="off"></div>
+        <div class="form-group"><label>Valor *</label><div class="amt-wrap"><button type="button" class="amt-sign-btn" id="scAmountSignBtn" onclick="toggleAmtSign('scAmount')" aria-label="Alternar sinal">+</button><input type="text" id="scAmount" inputmode="numeric" placeholder="0,00" pattern="[0-9.,]*" autocomplete="off"></div></div>
         <div class="form-group"><label>Conta *</label><select id="scAccountId"></select></div>
         <div class="form-group" id="scPayeeGroup" style="position:relative">
           <label>Beneficiário / Fonte</label>
@@ -2794,7 +2800,7 @@ canvas { cursor: default; }
       <p id="registerOccDesc" style="margin-bottom:14px;color:var(--muted);font-size:.875rem"></p>
       <div class="form-grid">
         <div class="form-group"><label>Data real *</label><input type="date" id="occDate"></div>
-        <div class="form-group"><label>Valor real *</label><input type="text" id="occAmount" inputmode="decimal" placeholder="0,00" pattern="[\-0-9.,]*" autocomplete="off"></div>
+        <div class="form-group"><label>Valor real *</label><div class="amt-wrap"><button type="button" class="amt-sign-btn" id="occAmountSignBtn" onclick="toggleAmtSign('occAmount')" aria-label="Alternar sinal">+</button><input type="text" id="occAmount" inputmode="numeric" placeholder="0,00" pattern="[0-9.,]*" autocomplete="off"></div></div>
         <div class="form-group full"><label>Memo</label><input type="text" id="occMemo" placeholder="Observação desta ocorrência"></div>
       </div>
       <input type="hidden" id="occScId">
@@ -2885,7 +2891,7 @@ canvas { cursor: default; }
       <input type="hidden" id="txId"><input type="hidden" id="txTypeField" value="expense">
       <div class="form-grid">
         <div class="form-group"><label>Data *</label><input type="date" id="txDate"></div>
-        <div class="form-group"><label>Valor *</label><input type="text" id="txAmount" inputmode="decimal" placeholder="0,00" pattern="[\-0-9.,]*" autocomplete="off" oninput="if(document.getElementById('txIsInternational')?.checked)updateIofMirror()"></div>
+        <div class="form-group"><label>Valor *</label><div class="amt-wrap"><button type="button" class="amt-sign-btn" id="txAmountSignBtn" onclick="toggleAmtSign('txAmount')" aria-label="Alternar sinal">+</button><input type="text" id="txAmount" inputmode="numeric" placeholder="0,00" pattern="[0-9.,]*" autocomplete="off" oninput="if(document.getElementById('txIsInternational')?.checked)updateIofMirror()"></div></div>
         <div class="form-group full"><label>Descrição *</label><input type="text" id="txDesc" placeholder="Ex: Almoço no restaurante"></div>
         <div class="form-group"><label>Conta *</label><select id="txAccountId" onchange="checkAccountIofConfig(this.value)"></select></div>
         <div class="form-group" id="txTransferToGroup" style="display:none"><label>Conta Destino *</label><select id="txTransferTo"></select></div>
@@ -2982,7 +2988,7 @@ canvas { cursor: default; }
             </div>
           </div>
         </div>
-        <div class="form-group"><label>Saldo Inicial</label><input type="text" id="accountBalance" inputmode="decimal" placeholder="0,00" pattern="[\-0-9.,]*" autocomplete="off"></div>
+        <div class="form-group"><label>Saldo Inicial</label><div class="amt-wrap"><button type="button" class="amt-sign-btn" id="accountBalanceSignBtn" onclick="toggleAmtSign('accountBalance')" aria-label="Alternar sinal">+</button><input type="text" id="accountBalance" inputmode="numeric" placeholder="0,00" pattern="[0-9.,]*" autocomplete="off"></div></div>
         <div class="form-group full">
           <label>Ícone</label>
           <div class="icon-picker" id="accountIconPicker">
@@ -3179,7 +3185,7 @@ canvas { cursor: default; }
       <div class="form-grid">
         <div class="form-group full"><label>Categoria *</label><select id="budgetCategory"></select></div>
         <div class="form-group"><label>Mês *</label><input type="month" id="budgetMonthInput"></div>
-        <div class="form-group"><label>Valor (R$) *</label><input type="text" id="budgetAmount" inputmode="decimal" placeholder="0,00" pattern="[0-9.,]*" autocomplete="off"></div>
+        <div class="form-group"><label>Valor (R$) *</label><input type="text" id="budgetAmount" inputmode="numeric" placeholder="0,00" pattern="[0-9.,]*" autocomplete="off"></div>
       </div>
     </div>
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('budgetModal')">Cancelar</button><button class="btn btn-primary" onclick="saveBudget()">Salvar</button></div>
@@ -3419,7 +3425,7 @@ function openAccountModal(id=''){
   document.getElementById('accountName').value=form.name;
   document.getElementById('accountType').value=form.type;
   document.getElementById('accountCurrency').value=form.currency;
-  document.getElementById('accountBalance').value=form.balance;
+  setAmtField('accountBalance', form.balance||0);
   document.getElementById('accountIcon').value=form.icon||'';
   document.getElementById('accountColor').value=form.color||'#2a6049';
   document.getElementById('accountModalTitle').textContent=id?'Editar Conta':'Nova Conta';
@@ -3439,7 +3445,7 @@ async function saveAccount(){
   const isCC=document.getElementById('accountType').value==='cartao_credito';
   const isBR=isCC&&document.getElementById('accountIsBrazilian').checked;
   const gid=document.getElementById('accountGroupId').value||null;
-  const data={name:document.getElementById('accountName').value.trim(),type:document.getElementById('accountType').value,currency:document.getElementById('accountCurrency').value,balance:parseAmtInput(document.getElementById('accountBalance').value),icon:document.getElementById('accountIcon').value||'',color:document.getElementById('accountColor').value,is_brazilian:isBR,iof_rate:isBR?parseFloat(document.getElementById('accountIofRate').value)||3.38:null,group_id:gid,updated_at:new Date().toISOString()};
+  const data={name:document.getElementById('accountName').value.trim(),type:document.getElementById('accountType').value,currency:document.getElementById('accountCurrency').value,balance:getAmtField('accountBalance'),icon:document.getElementById('accountIcon').value||'',color:document.getElementById('accountColor').value,is_brazilian:isBR,iof_rate:isBR?parseFloat(document.getElementById('accountIofRate').value)||3.38:null,group_id:gid,updated_at:new Date().toISOString()};
   if(!data.name){toast('Informe o nome da conta','error');return;}
   let err;if(id){({error:err}=await sb.from('accounts').update(data).eq('id',id));}else{({error:err}=await sb.from('accounts').insert(data));}
   if(err){toast(err.message,'error');return;}
@@ -4101,7 +4107,7 @@ function changePage(dir){state.txPage+=dir;loadTransactions();}
 function openTransactionModal(id=''){resetTxModal();document.getElementById('txDate').value=new Date().toISOString().slice(0,10);document.getElementById('txModalTitle').textContent='Nova Transação';if(id)editTransaction(id);else openModal('txModal');}
 function resetTxModal(){
   ['txId','txDesc','txMemo','txTags'].forEach(f=>document.getElementById(f).value='');
-  document.getElementById('txAmount').value='';
+  setAmtField('txAmount', 0);
   document.getElementById('txTypeField').value='expense';
   setTxType('expense');clearPayeeField('tx');hideCatSuggestion();setCatPickerValue(null);
   // Reset attachment
@@ -4117,7 +4123,7 @@ function resetTxModal(){
 }
 async function editTransaction(id){
   const{data,error}=await sb.from('transactions').select('*').eq('id',id).single();if(error){toast(error.message,'error');return;}
-  document.getElementById('txId').value=data.id;document.getElementById('txDate').value=data.date;document.getElementById('txAmount').value=Math.abs(data.amount);document.getElementById('txDesc').value=data.description||'';document.getElementById('txAccountId').value=data.account_id||'';setCatPickerValue(data.category_id||null);document.getElementById('txMemo').value=data.memo||'';document.getElementById('txTags').value=(data.tags||[]).join(', ');setPayeeField(data.payee_id||null,'tx');
+  document.getElementById('txId').value=data.id;document.getElementById('txDate').value=data.date;setAmtField('txAmount', data.amount);document.getElementById('txDesc').value=data.description||'';document.getElementById('txAccountId').value=data.account_id||'';setCatPickerValue(data.category_id||null);document.getElementById('txMemo').value=data.memo||'';document.getElementById('txTags').value=(data.tags||[]).join(', ');setPayeeField(data.payee_id||null,'tx');
   // Load attachment if exists
   if(data.attachment_url){
     document.getElementById('txAttachUrl').value=data.attachment_url;
@@ -4136,7 +4142,7 @@ function setTxType(type){
 }
 async function saveTransaction(){
   const id=document.getElementById('txId').value,type=document.getElementById('txTypeField').value;
-  let amount=parseAmtInput(document.getElementById('txAmount').value);
+  let amount=getAmtField('txAmount');
   if(type==='expense')amount=-Math.abs(amount);else if(type==='income')amount=Math.abs(amount);
   const tags=document.getElementById('txTags').value.split(',').map(s=>s.trim()).filter(Boolean);
   const data={date:document.getElementById('txDate').value,description:document.getElementById('txDesc').value.trim(),amount,account_id:document.getElementById('txAccountId').value||null,payee_id:document.getElementById('txPayeeId').value||null,category_id:document.getElementById('txCategoryId').value||null,memo:document.getElementById('txMemo').value,tags:tags.length?tags:null,is_transfer:type==='transfer',transfer_to_account_id:type==='transfer'?document.getElementById('txTransferTo').value||null:null,attachment_url:document.getElementById('txAttachUrl').value||null,updated_at:new Date().toISOString()};
@@ -4200,8 +4206,8 @@ async function loadBudgets(){
   if(!budgets?.length){grid.innerHTML='<div class="empty-state" style="grid-column:1/-1"><div class="es-icon">🎯</div><p>Nenhum orçamento para este mês</p></div>';return;}
   grid.innerHTML=(budgets||[]).map(b=>{const spent=spending[b.category_id]||0,pct=b.amount>0?Math.min(100,(spent/b.amount)*100):0,over=spent>b.amount;return`<div class="card"><div class="card-header"><div style="display:flex;align-items:center;gap:8px"><span style="font-size:1.2rem">${b.categories?.icon||'📦'}</span><strong style="font-size:.9rem">${esc(b.categories?.name||'—')}</strong></div><div style="display:flex;gap:4px"><button class="btn-icon" onclick="openBudgetModal('${b.id}')">✏️</button><button class="btn-icon" onclick="deleteBudget('${b.id}')">🗑️</button></div></div><div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:.84rem"><span class="${over?'text-red':''}">Gasto: <strong>${fmt(spent)}</strong></span><span class="text-muted">Meta: ${fmt(b.amount)}</span></div><div class="progress"><div class="progress-bar" style="width:${pct}%;background:${over?'var(--red)':b.categories?.color||'var(--accent)'}"></div></div><div style="text-align:right;margin-top:5px;font-size:.72rem;color:var(--muted)">${pct.toFixed(0)}% utilizado</div></div>`;}).join('');
 }
-function openBudgetModal(){document.getElementById('budgetId').value='';document.getElementById('budgetAmount').value='';document.getElementById('budgetCategory').innerHTML=state.categories.filter(c=>c.type==='despesa'&&!c.parent_id).map(c=>`<option value="${c.id}">${c.icon||''} ${c.name}</option>`).join('');openModal('budgetModal');}
-async function saveBudget(){const mv=document.getElementById('budgetMonthInput').value;if(!mv)return;const[y,m]=mv.split('-');const data={category_id:document.getElementById('budgetCategory').value,month:`${y}-${m}-01`,amount:parseAmtInput(document.getElementById('budgetAmount').value)};if(!data.category_id||!data.amount){toast('Preencha todos os campos','error');return;}const{error}=await sb.from('budgets').upsert(data,{onConflict:'category_id,month'});if(error){toast(error.message,'error');return;}toast('Orçamento salvo!','success');closeModal('budgetModal');loadBudgets();}
+function openBudgetModal(){document.getElementById('budgetId').value='';setAmtField('budgetAmount', 0);document.getElementById('budgetCategory').innerHTML=state.categories.filter(c=>c.type==='despesa'&&!c.parent_id).map(c=>`<option value="${c.id}">${c.icon||''} ${c.name}</option>`).join('');openModal('budgetModal');}
+async function saveBudget(){const mv=document.getElementById('budgetMonthInput').value;if(!mv)return;const[y,m]=mv.split('-');const data={category_id:document.getElementById('budgetCategory').value,month:`${y}-${m}-01`,amount:getAmtField('budgetAmount')};if(!data.category_id||!data.amount){toast('Preencha todos os campos','error');return;}const{error}=await sb.from('budgets').upsert(data,{onConflict:'category_id,month'});if(error){toast(error.message,'error');return;}toast('Orçamento salvo!','success');closeModal('budgetModal');loadBudgets();}
 async function deleteBudget(id){if(!confirm('Excluir orçamento?'))return;await sb.from('budgets').delete().eq('id',id);loadBudgets();}
 
 const _dashGroupCollapsed = {}; // groupId → true/false
@@ -5193,6 +5199,45 @@ function parseAmtInput(s) {
   if (isNaN(v)) return 0;
   return neg ? -Math.abs(v) : v;
 }
+
+// Sign toggle button state: fieldId → true means negative
+const _amtSignState = {};
+
+function toggleAmtSign(fieldId) {
+  _amtSignState[fieldId] = !_amtSignState[fieldId];
+  _updateSignBtn(fieldId);
+}
+
+function _updateSignBtn(fieldId) {
+  const btn = document.getElementById(fieldId + 'SignBtn');
+  if (!btn) return;
+  const isNeg = !!_amtSignState[fieldId];
+  btn.textContent = isNeg ? '−' : '+';
+  btn.classList.toggle('negative', isNeg);
+  btn.classList.toggle('positive', !isNeg);
+}
+
+// Set amount field value and sign btn state from a numeric value (e.g. when editing)
+function setAmtField(fieldId, value) {
+  const isNeg = (value < 0);
+  _amtSignState[fieldId] = isNeg;
+  const el = document.getElementById(fieldId);
+  if (el) el.value = value !== 0 ? Math.abs(value).toFixed(2).replace('.', ',') : '';
+  _updateSignBtn(fieldId);
+}
+
+// Read the signed value from an amount field
+function getAmtField(fieldId) {
+  const el = document.getElementById(fieldId);
+  if (!el) return 0;
+  const raw = el.value.trim();
+  if (!raw) return 0;
+  // Parse the absolute value
+  let clean = raw.replace(/\./g, '').replace(',', '.'); // handle BR format
+  if (!/[.,]/.test(raw)) clean = raw; // plain integer
+  const abs = Math.abs(parseFloat(clean) || 0);
+  return _amtSignState[fieldId] ? -abs : abs;
+}
 function fmtDate(d){if(!d)return'—';const[y,m,day]=d.split('T')[0].split('-');return`${day}/${m}/${y}`;}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
@@ -6042,7 +6087,7 @@ function openScheduledModal(id='') {
   const sc = id ? state.scheduled.find(s=>s.id===id) : null;
   document.getElementById('scId').value = id;
   document.getElementById('scDesc').value = sc?.description||'';
-  document.getElementById('scAmount').value = sc ? Math.abs(sc.amount) : '';
+  setAmtField('scAmount', sc ? sc.amount : 0);
   document.getElementById('scMemo').value = sc?.memo||'';
   document.getElementById('scTags').value = (sc?.tags||[]).join(', ');
   document.getElementById('scStatus').value = sc?.status||'active';
@@ -6162,7 +6207,7 @@ async function saveScheduled() {
   const freq = document.querySelector('input[name=scFreq]:checked')?.value || 'once';
   const endType = document.querySelector('input[name=scEnd]:checked')?.value || 'forever';
   const type = document.getElementById('scTypeField').value;
-  const amount = parseAmtInput(document.getElementById('scAmount').value);
+  const amount = getAmtField('scAmount');
   const tags = document.getElementById('scTags').value.split(',').map(s=>s.trim()).filter(Boolean);
 
   const autoReg = document.getElementById('scAutoRegister')?.checked || false;
@@ -6233,7 +6278,7 @@ function openRegisterOcc(scId, date) {
   if(!sc) return;
   document.getElementById('occScId').value = scId;
   document.getElementById('occDate').value = date;
-  document.getElementById('occAmount').value = Math.abs(sc.amount);
+  setAmtField('occAmount', sc.amount);
   document.getElementById('occMemo').value = '';
   document.getElementById('registerOccDesc').textContent = `Registrar "${sc.description}" em ${fmtDate(date)} — isso criará uma transação real na conta ${sc.accounts?.name||''}.`;
   openModal('registerOccModal');
@@ -6246,7 +6291,7 @@ async function confirmRegisterOccurrence() {
   if(!sc) return;
 
   const actualDate = document.getElementById('occDate').value;
-  const amount = parseAmtInput(document.getElementById('occAmount').value) || Math.abs(sc.amount);
+  const amount = getAmtField('occAmount') || Math.abs(sc.amount);
   const memo = document.getElementById('occMemo').value;
   const finalAmount = sc.type==='expense' ? -Math.abs(amount) : Math.abs(amount);
 
@@ -6426,7 +6471,7 @@ function updateIofMirror() {
   const info = document.getElementById('txIofMirrorInfo');
   if(!cb || !info) return;
   if(!cb.checked) { info.classList.remove('visible'); return; }
-  const amount = parseAmtInput(document.getElementById('txAmount').value);
+  const amount = getAmtField('txAmount');
   const accountId = document.getElementById('txAccountId').value;
   const acct = state.accounts.find(a=>a.id===accountId);
   const rate = acct?.iof_rate || 3.38;
