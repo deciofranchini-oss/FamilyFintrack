@@ -4710,7 +4710,7 @@ function _txDetailAction(action) {
   else if (action === 'del') deleteTransaction(_txDetailId);
 }
 
-
+async function loadBudgets(){
   const month=document.getElementById('budgetMonth').value;if(!month)return;
   const[y,m]=month.split('-'),monthStart=`${y}-${m}-01`;
   const{data:budgets,error:be}=await famQ(sb.from('budgets').select('*, categories(name,icon,color)')).eq('month',monthStart);if(be){toast(be.message,'error');return;}
@@ -9480,9 +9480,21 @@ function switchUATab(tab) {
 // ── FAMILIES ──────────────────────────────────────────────────────
 
 async function loadFamiliesList() {
-  const { data: families, error } = await sb.from('families').select('*').order('name');
-  if (error) { toast('Erro ao carregar famílias: '+error.message,'error'); return; }
-  _families = families || [];
+  let families = [];
+  try {
+    const { data, error } = await sb.from('families').select('*').order('name');
+    if (error) throw error;
+    families = data || [];
+  } catch(e) {
+    // families table may not exist yet — show migration hint
+    const el = document.getElementById('familiesList');
+    if (el) el.innerHTML = `<div style="background:var(--amber-lt);border:1px solid var(--amber);border-radius:8px;padding:14px;font-size:.82rem">
+      ⚠️ <strong>Tabela "families" não encontrada.</strong><br>
+      Execute o script <code>migration_families.sql</code> no Supabase SQL Editor para habilitar o suporte a múltiplas famílias.
+    </div>`;
+    return;
+  }
+  _families = families;
 
   // Populate family select in user form
   const sel = document.getElementById('uFamilyId');
@@ -9707,19 +9719,19 @@ async function editUser(userId) {
 }
 
 async function saveUser() {
-  const userId = document.getElementById('editUserId').value;
-  const name   = document.getElementById('uName').value.trim();
-  const email  = document.getElementById('uEmail').value.trim().toLowerCase();
-  const pwd    = document.getElementById('uPassword').value;
-  const role   = document.getElementById('uRole').value;
-  const famId  = document.getElementById('uFamilyId').value || null;
+  const userId    = document.getElementById('editUserId').value;
+  const name      = document.getElementById('uName').value.trim();
+  const email     = document.getElementById('uEmail').value.trim().toLowerCase();
+  const pwd       = document.getElementById('uPassword').value;
+  const role      = document.getElementById('uRole').value;
+  const newFamId  = document.getElementById('uFamilyId').value || null;
   if (!name || !email) { toast('Preencha nome e e-mail','error'); return; }
   if (!userId && pwd.length < 8) { toast('Senha deve ter pelo menos 8 caracteres','error'); return; }
   if (userId && pwd && pwd.length < 8) { toast('Senha deve ter pelo menos 8 caracteres','error'); return; }
 
   const record = {
     name, email, role,
-    family_id:  famId,
+    family_id:  newFamId,
     can_view:   document.getElementById('pView').checked,
     can_create: document.getElementById('pCreate').checked,
     can_edit:   document.getElementById('pEdit').checked,
