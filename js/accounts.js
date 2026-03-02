@@ -142,7 +142,7 @@ function accountTypeLabel(t){
 }
 
 function openAccountModal(id=''){
-  const form={id:'',name:'',type:'corrente',currency:'BRL',initial_balance:0,icon:'',color:'#2a6049',is_brazilian:false,iof_rate:3.38,group_id:''};
+  const form={id:'',name:'',type:'corrente',currency:'BRL',initial_balance:0,icon:'',color:'#2a6049',is_brazilian:false,iof_rate:3.5,group_id:''};
   if(id){
     const a=state.accounts.find(x=>x.id===id);
     if(a){Object.assign(form,a);form.initial_balance=parseFloat(a.initial_balance)||0;}
@@ -166,7 +166,7 @@ function openAccountModal(id=''){
   const isBREl=document.getElementById('accountIsBrazilian');
   if(isBREl)isBREl.checked=!!form.is_brazilian;
   const iofRateEl=document.getElementById('accountIofRate');
-  if(iofRateEl)iofRateEl.value=form.iof_rate||3.38;
+  if(iofRateEl)iofRateEl.value=form.iof_rate||3.5;
   const iofRateGrp=document.getElementById('accountIofRateGroup');
   if(iofRateGrp)iofRateGrp.style.display=form.is_brazilian?'':'none';
   setTimeout(()=>syncIconPickerToValue(form.icon||'',form.color||'#2a6049'),50);
@@ -189,7 +189,7 @@ async function saveAccount(){
     icon:document.getElementById('accountIcon').value||'',
     color:document.getElementById('accountColor').value,
     is_brazilian:isBR,
-    iof_rate:isBR?(parseFloat(iofRateEl&&iofRateEl.value)||3.38):null,
+    iof_rate:isBR?(parseFloat(iofRateEl&&iofRateEl.value)||3.5):null,
     group_id:gid,
     updated_at:new Date().toISOString()
   };
@@ -227,44 +227,28 @@ async function loadGroups(){
 }
 
 function renderGroupManager(){
-  const el=document.getElementById('groupManagerList');if(!el)return;
-  if(!state.groups.length){el.innerHTML='<div style="font-size:.85rem;color:var(--muted);text-align:center;padding:16px">Nenhum grupo criado ainda.</div>';return;}
+  const el=document.getElementById('groupList');
+  if(!el) return;
+  if(!state.groups.length){
+    el.innerHTML='<div style="font-size:.85rem;color:var(--muted);text-align:center;padding:16px">Nenhum grupo criado ainda.</div>';
+    return;
+  }
   el.innerHTML=state.groups.map(g=>{
     const count=state.accounts.filter(a=>a.group_id===g.id).length;
-    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
-      <span style="font-size:1.3rem">${g.emoji||'🗂️'}</span>
-      <span style="flex:1;font-weight:500">${esc(g.name)}</span>
-      <span style="font-size:.75rem;color:var(--muted)">${count} conta${count!==1?'s':''}</span>
-      <button class="btn-icon" onclick="openGroupModal('${g.id}')">✏️</button>
-      <button class="btn-icon" onclick="deleteGroup('${g.id}')">🗑️</button>
+    const color=g.color||'#2a6049';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 10px;border:1px solid var(--border);border-radius:12px;background:var(--surface)">
+      <span style="font-size:1.35rem">${g.emoji||'🗂️'}</span>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(g.name)}</span>
+          <span style="width:10px;height:10px;border-radius:999px;background:${color};border:1px solid rgba(0,0,0,.08)"></span>
+        </div>
+        <div style="font-size:.75rem;color:var(--muted)">${count} conta${count!==1?'s':''}</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="openGroupModal('${g.id}')" title="Editar">✏️</button>
+      <button class="btn btn-ghost btn-sm" onclick="deleteGroup('${g.id}')" title="Excluir" style="color:var(--red)">🗑️</button>
     </div>`;
   }).join('');
-}
-
-function openGroupModal(id=''){
-  const g=id?state.groups.find(x=>x.id===id):null;
-  document.getElementById('groupId').value=id;
-  document.getElementById('groupName').value=g?.name||'';
-  document.getElementById('groupEmoji').value=g?.emoji||'🗂️';
-  document.getElementById('groupModalTitle').textContent=id?'Editar Grupo':'Novo Grupo';
-  openModal('groupModal');
-}
-
-async function saveGroup(){
-  const id=document.getElementById('groupId').value;
-  const data={name:document.getElementById('groupName').value.trim(),emoji:document.getElementById('groupEmoji').value||'🗂️',updated_at:new Date().toISOString()};
-  if(!data.name){toast('Informe o nome','error');return;}
-  if(!id)data.family_id=famId();
-  let err;
-  if(id){({error:err}=await sb.from('account_groups').update(data).eq('id',id));}
-  else{({error:err}=await sb.from('account_groups').insert(data));}
-  if(err){toast(err.message,'error');return;}
-  toast('Grupo salvo!','success');
-  closeModal('groupModal');
-  await loadGroups();
-  renderGroupManager();
-  await loadAccounts();
-  renderAccounts(_accountsViewMode);
 }
 
 async function deleteGroup(id){
