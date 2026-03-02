@@ -1526,6 +1526,10 @@ canvas { cursor: default; }
 
     <!-- TRANSACTIONS -->
     <div class="page" id="page-transactions">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+        <button class="btn btn-ghost btn-sm" onclick="openTxClipboardImport()">📋 Importar do Clipboard</button>
+        <button class="btn btn-primary btn-sm" onclick="openTransactionModal()">+ Nova Transação</button>
+      </div>
       <div class="filters">
         <div class="search-wrap">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--muted);flex-shrink:0"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
@@ -3177,6 +3181,79 @@ canvas { cursor: default; }
   </div>
 </div>
 
+<div class="modal-overlay" id="txClipboardModal">
+  <div class="modal" style="max-width:700px"><div class="modal-handle"></div>
+    <div class="modal-header">
+      <span class="modal-title">📋 Importar Transações do Clipboard</span>
+      <button class="modal-close" onclick="closeModal('txClipboardModal')">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- Format reference -->
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r-sm);padding:10px 14px;margin-bottom:12px;font-size:.8rem;line-height:1.7">
+        <strong>Formato esperado — uma transação por linha, campos separados por vírgula:</strong><br>
+        <code style="background:var(--bg3);padding:2px 6px;border-radius:4px;font-size:.8rem">data, valor, descrição, conta, categoria, beneficiário, memo</code><br>
+        <span style="color:var(--muted);font-size:.75rem">
+          • <strong>Data</strong>: DD/MM/AAAA ou AAAA-MM-DD &nbsp;·&nbsp;
+          <strong>Valor</strong>: negativo = despesa (ex: -150,00), positivo = receita &nbsp;·&nbsp;
+          <strong>Conta, categoria, beneficiário</strong>: nome exato ou deixar vazio &nbsp;·&nbsp;
+          <strong>memo</strong>: opcional
+        </span>
+      </div>
+
+      <!-- Account override -->
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+        <label style="font-size:.82rem;font-weight:600;color:var(--text2);white-space:nowrap">Conta padrão (se não informada na linha):</label>
+        <select id="txClipDefaultAccount" style="font-size:.82rem;min-width:160px">
+          <option value="">— usar coluna conta —</option>
+        </select>
+      </div>
+
+      <!-- Paste area -->
+      <div style="display:flex;gap:8px;margin-bottom:6px;align-items:center">
+        <button class="btn btn-ghost btn-sm" onclick="txClipPasteFromClipboard()">📋 Colar da Área de Transferência</button>
+        <span style="font-size:.75rem;color:var(--muted)">ou cole diretamente abaixo</span>
+      </div>
+      <textarea id="txClipText" rows="7"
+        placeholder="01/03/2026, -150,00, Supermercado Extra, Nubank, Alimentação, Supermercado Extra, compras da semana&#10;01/03/2026, 5000,00, Salário, Itaú, Salário,, depósito mensal&#10;02/03/2026, -49,90, Netflix, Nubank, Lazer"
+        oninput="parseTxClipboard()"
+        style="width:100%;resize:vertical;font-size:.82rem;font-family:var(--font-mono,monospace);border:1.5px solid var(--border);border-radius:var(--r-sm);padding:10px;background:var(--bg2);color:var(--text);box-sizing:border-box"></textarea>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin:8px 0 4px">
+        <span style="font-size:.78rem;color:var(--muted)" id="txClipCount"></span>
+        <label style="display:flex;align-items:center;gap:6px;font-size:.78rem;cursor:pointer">
+          <input type="checkbox" id="txClipSelectAll" onchange="txClipToggleAll(this.checked)" checked> Selecionar todos
+        </label>
+      </div>
+
+      <!-- Preview table -->
+      <div id="txClipPreview" style="display:none;max-height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--r-sm)">
+        <table style="width:100%;border-collapse:collapse;font-size:.78rem">
+          <thead>
+            <tr style="position:sticky;top:0;background:var(--surface2);z-index:1;border-bottom:1px solid var(--border)">
+              <th style="padding:6px 8px;text-align:left;font-weight:600;color:var(--muted);white-space:nowrap">Data</th>
+              <th style="padding:6px 8px;text-align:right;font-weight:600;color:var(--muted)">Valor</th>
+              <th style="padding:6px 8px;text-align:left;font-weight:600;color:var(--muted)">Descrição</th>
+              <th style="padding:6px 8px;text-align:left;font-weight:600;color:var(--muted)">Conta</th>
+              <th style="padding:6px 8px;text-align:left;font-weight:600;color:var(--muted)">Categoria</th>
+              <th style="padding:6px 8px;text-align:left;font-weight:600;color:var(--muted)">Beneficiário</th>
+              <th style="padding:6px 8px;text-align:center;font-weight:600;color:var(--muted);width:60px">Status</th>
+              <th style="padding:6px 8px;text-align:center;font-weight:600;color:var(--muted);width:30px">
+                <input type="checkbox" id="txClipSelectAllTh" onchange="txClipToggleAll(this.checked)" checked>
+              </th>
+            </tr>
+          </thead>
+          <tbody id="txClipPreviewBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('txClipboardModal')">Cancelar</button>
+      <button class="btn btn-primary" id="txClipImportBtn" onclick="confirmTxClipImport()" disabled>Importar →</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="budgetModal">
   <div class="modal" style="max-width:400px"><div class="modal-handle"></div>
     <div class="modal-header"><span class="modal-title">Novo Orçamento</span><button class="modal-close" onclick="closeModal('budgetModal')">✕</button></div>
@@ -3957,6 +4034,236 @@ async function confirmPayeeClipboardImport() {
     console.error(e);
   } finally {
     btn.disabled = false; btn.textContent = `Importar ${toImport.length} →`;
+  }
+}
+
+/* ══════════════════════════════════════════════════════
+   TRANSACTION CLIPBOARD IMPORT
+   Format per line: date, amount, description, account, category, payee, memo
+══════════════════════════════════════════════════════ */
+let _txClipItems = []; // parsed rows ready for preview
+
+function openTxClipboardImport() {
+  _txClipItems = [];
+  document.getElementById('txClipText').value = '';
+  document.getElementById('txClipPreview').style.display = 'none';
+  document.getElementById('txClipPreviewBody').innerHTML = '';
+  document.getElementById('txClipCount').textContent = '';
+  document.getElementById('txClipImportBtn').disabled = true;
+  document.getElementById('txClipSelectAll').checked = true;
+  document.getElementById('txClipSelectAllTh').checked = true;
+
+  // Populate default account selector
+  const sel = document.getElementById('txClipDefaultAccount');
+  sel.innerHTML = '<option value="">— usar coluna conta —</option>' +
+    (state.accounts || []).map(a => `<option value="${a.id}">${esc(a.name)}</option>`).join('');
+
+  openModal('txClipboardModal');
+}
+
+async function txClipPasteFromClipboard() {
+  try {
+    const text = await navigator.clipboard.readText();
+    document.getElementById('txClipText').value = text;
+    parseTxClipboard();
+  } catch(e) {
+    toast('Não foi possível acessar o clipboard. Cole manualmente.', 'warning');
+  }
+}
+
+function parseTxClipboard() {
+  const raw = document.getElementById('txClipText').value;
+  if (!raw.trim()) {
+    _txClipItems = [];
+    renderTxClipPreview();
+    return;
+  }
+
+  // Build lookup maps
+  const accByName  = {}, catByName = {}, payByName = {};
+  (state.accounts   || []).forEach(a => accByName[a.name.toLowerCase()]  = a);
+  (state.categories || []).forEach(c => catByName[c.name.toLowerCase()]  = c);
+  (state.payees     || []).forEach(p => payByName[p.name.toLowerCase()]  = p);
+
+  const defaultAccId = document.getElementById('txClipDefaultAccount').value;
+
+  _txClipItems = [];
+
+  const lines = raw.split(/\n/).map(l => l.trim()).filter(Boolean);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    // Parse CSV line respecting quoted fields
+    const cols = parseTxClipLine(line);
+
+    const rawDate = (cols[0] || '').trim();
+    const rawAmt  = (cols[1] || '').trim();
+    const desc    = (cols[2] || '').trim();
+    const accName = (cols[3] || '').trim();
+    const catName = (cols[4] || '').trim();
+    const payName = (cols[5] || '').trim();
+    const memo    = (cols[6] || '').trim();
+
+    // Validate date
+    const date = parseImportDate(rawDate);
+    // Validate amount
+    const amount = parseImportAmt(rawAmt);
+
+    const errors = [];
+    if (!date)         errors.push('data inválida');
+    if (rawAmt === '' || isNaN(amount)) errors.push('valor inválido');
+
+    // Resolve account
+    let account = null;
+    if (accName) account = accByName[accName.toLowerCase()] || null;
+    if (!account && defaultAccId) account = (state.accounts||[]).find(a => a.id === defaultAccId) || null;
+    if (!account && !errors.length) errors.push('conta não encontrada');
+
+    // Resolve category & payee (optional — will be null if not found)
+    const category = catName ? (catByName[catName.toLowerCase()] || null) : null;
+    const payee    = payName ? (payByName[payName.toLowerCase()] || null) : null;
+
+    _txClipItems.push({
+      lineNum: i + 1,
+      rawLine: line,
+      date, rawDate,
+      amount, rawAmt,
+      desc, memo,
+      accName:  accName  || account?.name || '',
+      catName:  catName,
+      payName:  payName,
+      account, category, payee,
+      errors,
+      selected: errors.length === 0,
+    });
+  }
+
+  renderTxClipPreview();
+}
+
+// Parse a CSV line properly (handles commas inside quoted strings)
+function parseTxClipLine(line) {
+  const cols = [];
+  let cur = '', inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') { inQ = !inQ; }
+    else if (c === ',' && !inQ) { cols.push(cur); cur = ''; }
+    else cur += c;
+  }
+  cols.push(cur);
+  return cols;
+}
+
+function renderTxClipPreview() {
+  const preview = document.getElementById('txClipPreview');
+  const body    = document.getElementById('txClipPreviewBody');
+  const countEl = document.getElementById('txClipCount');
+  const btn     = document.getElementById('txClipImportBtn');
+
+  if (!_txClipItems.length) {
+    preview.style.display = 'none';
+    countEl.textContent = '';
+    btn.disabled = true;
+    return;
+  }
+
+  const ok  = _txClipItems.filter(r => r.errors.length === 0);
+  const bad = _txClipItems.filter(r => r.errors.length > 0);
+  const sel = _txClipItems.filter(r => r.selected);
+  countEl.textContent = `${_txClipItems.length} linhas · ${ok.length} válidas · ${bad.length} com erro`;
+
+  body.innerHTML = _txClipItems.map((row, idx) => {
+    const hasErr = row.errors.length > 0;
+    const rowStyle = hasErr ? 'opacity:.6;background:var(--red-lt,#fef2f2)' : '';
+    const amtClass = (row.amount || 0) >= 0 ? 'amount-pos' : 'amount-neg';
+    const statusHtml = hasErr
+      ? `<span title="${row.errors.join(', ')}" style="font-size:.7rem;font-weight:600;color:var(--red);background:var(--red-lt);padding:2px 6px;border-radius:20px;cursor:help">⚠ ${row.errors[0]}</span>`
+      : `<span style="font-size:.7rem;font-weight:600;color:var(--green);background:var(--green-lt);padding:2px 6px;border-radius:20px">✓ ok</span>`;
+
+    return `<tr style="border-bottom:1px solid var(--border);${rowStyle}">
+      <td style="padding:5px 8px;white-space:nowrap;color:var(--muted)">${row.date || row.rawDate}</td>
+      <td style="padding:5px 8px;text-align:right;white-space:nowrap" class="${amtClass}">${row.amount !== undefined ? fmt(row.amount) : row.rawAmt}</td>
+      <td style="padding:5px 8px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(row.desc)}">${esc(row.desc || '—')}</td>
+      <td style="padding:5px 8px;font-size:.75rem;color:${row.account?'var(--text2)':'var(--red)'}">${esc(row.accName || '—')}</td>
+      <td style="padding:5px 8px;font-size:.75rem;color:${row.category?'var(--text2)':'var(--muted)'}">${esc(row.catName || '—')}</td>
+      <td style="padding:5px 8px;font-size:.75rem;color:${row.payee?'var(--text2)':'var(--muted)'}">${esc(row.payName || '—')}</td>
+      <td style="padding:5px 8px;text-align:center">${statusHtml}</td>
+      <td style="padding:5px 8px;text-align:center">
+        <input type="checkbox" ${row.selected ? 'checked' : ''} ${hasErr ? 'disabled' : ''}
+          onchange="_txClipItems[${idx}].selected=this.checked;_updateTxClipBtn()">
+      </td>
+    </tr>`;
+  }).join('');
+
+  preview.style.display = '';
+  _updateTxClipBtn();
+
+  // Sync header checkbox
+  const allSelectable = _txClipItems.filter(r => r.errors.length === 0);
+  const allChecked = allSelectable.length > 0 && allSelectable.every(r => r.selected);
+  document.getElementById('txClipSelectAll').checked = allChecked;
+  document.getElementById('txClipSelectAllTh').checked = allChecked;
+}
+
+function _updateTxClipBtn() {
+  const sel = _txClipItems.filter(r => r.selected);
+  const btn = document.getElementById('txClipImportBtn');
+  btn.disabled = sel.length === 0;
+  btn.textContent = sel.length > 0 ? `Importar ${sel.length} →` : 'Importar →';
+}
+
+function txClipToggleAll(checked) {
+  _txClipItems.forEach(r => { if (r.errors.length === 0) r.selected = checked; });
+  renderTxClipPreview();
+}
+
+async function confirmTxClipImport() {
+  const toImport = _txClipItems.filter(r => r.selected && r.errors.length === 0);
+  if (!toImport.length) { toast('Nenhuma linha selecionada', 'warning'); return; }
+
+  const btn = document.getElementById('txClipImportBtn');
+  btn.disabled = true; btn.textContent = '⏳ Importando...';
+
+  let created = 0, errors = 0;
+  try {
+    // Build records
+    const records = toImport.map(row => ({
+      date:        row.date,
+      description: row.desc || '',
+      amount:      row.amount,
+      account_id:  row.account.id,
+      category_id: row.category?.id || null,
+      payee_id:    row.payee?.id    || null,
+      memo:        row.memo         || null,
+      is_transfer: false,
+    }));
+
+    // Insert in batches of 100
+    for (let i = 0; i < records.length; i += 100) {
+      const { error } = await sb.from('transactions').insert(records.slice(i, i + 100));
+      if (error) {
+        // Fallback: one by one
+        for (const rec of records.slice(i, i + 100)) {
+          const { error: e2 } = await sb.from('transactions').insert(rec);
+          if (e2) { errors++; console.warn('[txClip]', e2.message, rec); }
+          else created++;
+        }
+      } else {
+        created += records.slice(i, i + 100).length;
+      }
+    }
+
+    closeModal('txClipboardModal');
+    await loadTransactions();
+    if (state.currentPage === 'dashboard') loadDashboard();
+    toast(`✓ ${created} transaç${created !== 1 ? 'ões importadas' : 'ão importada'}${errors ? ` · ${errors} erro(s)` : ''}`,
+      errors ? 'warning' : 'success');
+  } catch(e) {
+    toast('Erro: ' + e.message, 'error');
+    console.error(e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = `Importar ${toImport.length} →`;
   }
 }
 
