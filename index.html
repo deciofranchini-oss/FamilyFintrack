@@ -3285,13 +3285,18 @@ function navigate(page){
 }
 
 async function loadAccounts(){
-  const[{data:accs,error},{data:grps}]=await Promise.all([
-    sb.from('accounts').select('*').eq('active',true).order('name'),
-    sb.from('account_groups').select('*').order('name').catch(()=>({data:[]}))
+  const [{data:accs,error}] = await Promise.all([
+    sb.from('accounts').select('*').eq('active',true).order('name')
   ]);
   if(error){toast(error.message,'error');return;}
   state.accounts=accs||[];
-  state.groups=grps||[];
+  // Load account_groups gracefully (table may not exist)
+  try {
+    const {data:grps} = await sb.from('account_groups').select('*').order('name');
+    state.groups=grps||[];
+  } catch(e) {
+    state.groups=[];
+  }
 }
 let _accountsViewMode='';
 function renderAccounts(ft=''){
@@ -3439,7 +3444,7 @@ async function saveGroup(){
 }
 async function deleteGroup(id){
   if(!confirm('Excluir este grupo? As contas serão mantidas sem grupo.'))return;
-  await sb.from('accounts').update({group_id:null}).eq('group_id',id).catch(()=>{});
+  try { await sb.from('accounts').update({group_id:null}).eq('group_id',id); } catch(e) {}
   const{error}=await sb.from('account_groups').delete().eq('id',id);
   if(error){toast(error.message,'error');return;}
   toast('Grupo removido','success');
@@ -8001,7 +8006,7 @@ async function exportBackup() {
       sb.from('payees').select('*'),
       sb.from('transactions').select('*'),
       sb.from('budgets').select('*'),
-      sb.from('scheduled_transactions').select('*').catch(() => ({ data:[] })),
+      sb.from('scheduled_transactions').select('*').then(r=>r, () => ({ data:[] })),
     ]);
     const backup = {
       version: '2.0', app: "JF Family FinTrack",
@@ -8116,7 +8121,7 @@ async function executeClearDatabase() {
       try {
         // Categories are self-referencing (parent_id), so we must null parent_id first
         if (t === 'categories') {
-          await sb.from('categories').update({ parent_id: null }).not('id', 'is', null).catch(() => {});
+          try { await sb.from('categories').update({ parent_id: null }).not('id', 'is', null); } catch(e) {}
         }
 
         const { error } = await sb.from(t).delete().not('id', 'is', null);
@@ -8140,7 +8145,7 @@ async function executeClearDatabase() {
     // Clear this user's sessions (will require re-login), but preserve app_users (login credentials)
     const token = localStorage.getItem('ft_session_token');
     if (token) {
-      await sb.from('app_sessions').delete().not('id', 'is', null).catch(() => {});
+      try { await sb.from('app_sessions').delete().not('id', 'is', null); } catch(e) {}
       localStorage.removeItem('ft_session_token');
       localStorage.removeItem('ft_user_id');
     }
@@ -8416,7 +8421,7 @@ function applyPermissions() {
 async function doLogout() {
   const token = localStorage.getItem('ft_session_token');
   if (token) {
-    await sb.from('app_sessions').delete().eq('token', token).catch(()=>{});
+    try { await sb.from('app_sessions').delete().eq('token', token); } catch(e) {}
     localStorage.removeItem('ft_session_token');
     localStorage.removeItem('ft_user_id');
   }
