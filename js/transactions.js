@@ -381,8 +381,8 @@ function renderTransactionsGrouped(txs) {
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
           ${g.income ? `<span class="badge badge-green" style="font-size:.75rem">+${fmt(g.income)}</span>` : ''}
           ${g.expense ? `<span class="badge badge-red" style="font-size:.75rem">${fmt(g.expense)}</span>` : ''}
-          <span class="badge" style="font-size:.78rem;font-weight:700;background:${g.balance>=0?'var(--green-lt)':'var(--red-lt)'};color:${g.balance>=0?'var(--green)':'var(--red)'}">
-            ${( (parseFloat((state.accounts.find(a=>a.id===k)||{}).initial_balance)||0) + g.balance) >=0 ? '=':''} ${fmt((parseFloat((state.accounts.find(a=>a.id===k)||{}).initial_balance)||0) + g.balance), ((state.accounts.find(a=>a.id===k)||{}).currency || 'BRL'))}
+          <span class="badge" style="font-size:.78rem;font-weight:700;background:${((parseFloat(acct.initial_balance)||0)+g.balance)>=0?'var(--green-lt)':'var(--red-lt)'};color:${((parseFloat(acct.initial_balance)||0)+g.balance)>=0?'var(--green)':'var(--red)'}">
+            Saldo: ${fmt((parseFloat(acct.initial_balance)||0) + g.balance, acct.currency || 'BRL')}
           </span>
           <span style="font-size:.7rem;color:var(--muted)">${g.txs.length} lanç.</span>
         </div>
