@@ -1481,7 +1481,18 @@
           </div>
           <div id="scPayeeDropdown" class="payee-dropdown" style="display:none"></div>
         </div>
-        <div class="form-group" id="scCategoryGroup"><label>Categoria</label><select id="scCategoryId"><option value="">— Sem categoria —</option></select></div>
+        <div class="form-group" id="scCategoryGroup">
+          <label>Categoria</label>
+          <input type="hidden" id="scCategoryId">
+          <div class="cat-picker-wrap" id="scCatPickerWrap">
+            <button type="button" class="cat-picker-btn" id="scCatPickerBtn" onclick="toggleCatPicker('sc')">
+              <span class="cat-picker-dot" id="scCatPickerDot" style="display:none"></span>
+              <span id="scCatPickerLabel" style="color:var(--muted)">— Sem categoria —</span>
+              <span class="cat-picker-caret">▼</span>
+            </button>
+            <div class="cat-picker-dropdown" id="scCatPickerDropdown"></div>
+          </div>
+        </div>
         <div class="form-group"><label>Tags</label><input type="text" id="scTags" placeholder="IR, Décio, ..."></div>
 
         <!-- Divider -->
