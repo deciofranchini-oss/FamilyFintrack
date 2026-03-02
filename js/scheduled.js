@@ -380,6 +380,24 @@ function setScType(type) {
   if(cpBadge) cpBadge.style.display = isCardPayment ? '' : 'none';
   const trLabel = document.querySelector('#scTransferToGroup label');
   if(trLabel) trLabel.textContent = isCardPayment ? 'Cartão de Crédito (Destino) *' : 'Conta Destino *';
+  // Filter source account: card_payment origin cannot be a credit card account
+  _filterScAccountOrigin(isCardPayment);
+}
+
+function _filterScAccountOrigin(excludeCreditCards) {
+  const sel = document.getElementById('scAccountId');
+  if (!sel || !state.accounts) return;
+  const currentVal = sel.value;
+  const accounts = excludeCreditCards
+    ? state.accounts.filter(a => a.type !== 'cartao_credito')
+    : state.accounts;
+  sel.innerHTML = accounts.map(a =>
+    `<option value="${a.id}"${a.id===currentVal?' selected':''}>${esc(a.name)} (${a.currency})</option>`
+  ).join('');
+  if (excludeCreditCards && currentVal) {
+    const acct = state.accounts.find(a => a.id === currentVal);
+    if (acct && acct.type === 'cartao_credito') sel.value = '';
+  }
 }
 
 function onScFreqChange() {

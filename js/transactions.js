@@ -444,6 +444,20 @@ async function editTransaction(id){
   const type=data.is_transfer?(data.is_card_payment?'card_payment':'transfer'):data.amount>=0?'income':'expense';setTxType(type);if(type==='transfer'||type==='card_payment')document.getElementById('txTransferTo').value=data.transfer_to_account_id||'';
   document.getElementById('txModalTitle').textContent='Editar Transação';openModal('txModal');
 }
+function _filterTxAccountOrigin(excludeCreditCards) {
+  const sel = document.getElementById('txAccountId');
+  if (!sel || !state.accounts) return;
+  const currentVal = sel.value;
+  const accounts = excludeCreditCards
+    ? state.accounts.filter(a => a.type !== 'cartao_credito')
+    : state.accounts;
+  sel.innerHTML = '<option value="">Selecione a conta</option>' +
+    accounts.map(a => `<option value="${a.id}"${a.id===currentVal?' selected':''}>${esc(a.name)} (${a.currency})</option>`).join('');
+  if (excludeCreditCards && currentVal) {
+    const acct = state.accounts.find(a => a.id === currentVal);
+    if (acct && acct.type === 'cartao_credito') sel.value = '';
+  }
+}
 function setTxType(type){
   document.getElementById('txTypeField').value=type;
   // card_payment is visually shown as 'transfer' tab
@@ -459,6 +473,8 @@ function setTxType(type){
   if(cpBadge) cpBadge.style.display = isCardPayment ? '' : 'none';
   const transferToLabel = document.querySelector('#txTransferToGroup label');
   if(transferToLabel) transferToLabel.textContent = isCardPayment ? 'Cartão de Crédito (Destino) *' : 'Conta Destino *';
+  // Filter source account: card_payment origin cannot be a credit card account
+  _filterTxAccountOrigin(isCardPayment);
 }
 async function saveTransaction(){
   const id=document.getElementById('txId').value,type=document.getElementById('txTypeField').value;
