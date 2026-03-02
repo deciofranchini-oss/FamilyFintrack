@@ -127,150 +127,187 @@ function syncIconPickerToValue(iconKey, color) {
 ═══════════════════════════════════════ */
 let catPickerOpen = false;
 
-function buildCatPicker() {
-  const dd = document.getElementById('catPickerDropdown');
+function buildCatPicker(typeFilter, ctx) {
+  ctx = ctx || 'tx';
+  var c = _catCtx(ctx);
+  const dd = document.getElementById(c.ddId);
   if (!dd) return;
 
-  const parents = state.categories
-    .filter(c => !c.parent_id)
-    .sort((a, b) => a.name.localeCompare(b.name));
+  // Auto-detect filter from the modal type if not explicitly provided
+  if (!typeFilter) {
+    var txType = document.getElementById(c.typeId) ? document.getElementById(c.typeId).value : '';
+    if (txType === 'expense') typeFilter = 'despesa';
+    else if (txType === 'income') typeFilter = 'receita';
+  }
 
-  let html = `<div class="cat-none-option" onclick="setCatPickerValue(null)">
-    <span style="width:10px;height:10px;border-radius:50%;background:var(--border);display:inline-block;flex-shrink:0"></span>
-    <span style="color:var(--muted)">— Sem categoria —</span>
-  </div>`;
+  const allCats = state.categories || [];
+  const cats = typeFilter ? allCats.filter(function(c){ return c.type === typeFilter; }) : allCats;
 
-  parents.forEach(p => {
-    const children = state.categories
-      .filter(c => c.parent_id === p.id)
-      .sort((a, b) => a.name.localeCompare(b.name));
+  const parents = cats
+    .filter(function(c){ return !c.parent_id; })
+    .sort(function(a, b){ return a.name.localeCompare(b.name); });
+
+  let html = '<div class="cat-none-option" onclick="setCatPickerValue(null, \'' + ctx + '\')">' +
+    '<span style="width:10px;height:10px;border-radius:50%;background:var(--border);display:inline-block;flex-shrink:0"></span>' +
+    '<span style="color:var(--muted)">\u2014 Sem categoria \u2014</span>' +
+    '</div>';
+
+  parents.forEach(function(p) {
+    const children = cats
+      .filter(function(c){ return c.parent_id === p.id; })
+      .sort(function(a, b){ return a.name.localeCompare(b.name); });
 
     const hasChildren = children.length > 0;
     const color = p.color || '#8c8278';
-    const icon = p.icon || '📦';
+    const icon = p.icon || '\ud83d\udce6';
     const groupId = 'catGroup-' + p.id;
 
-    html += `<div class="cat-group-header" id="catGH-${p.id}">
-      <span style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0"></span>
-      <span style="font-size:.9rem;flex-shrink:0">${icon}</span>
-      <span class="cat-group-label">${esc(p.name)}</span>
-      <span class="cat-group-select" onclick="event.stopPropagation();setCatPickerValue('${p.id}')" title="Selecionar esta categoria">usar</span>
-      ${hasChildren ? `<span class="cat-group-count">${children.length}</span>
-      <span class="cat-group-arrow" id="catArr-${p.id}">▶</span>` : ''}
-    </div>`;
+    html += '<div class="cat-group-header" id="catGH-' + p.id + '">' +
+      '<span style="width:10px;height:10px;border-radius:50%;background:' + color + ';flex-shrink:0"></span>' +
+      '<span style="font-size:.9rem;flex-shrink:0">' + icon + '</span>' +
+      '<span class="cat-group-label">' + esc(p.name) + '</span>' +
+      '<span class="cat-group-select" onclick="event.stopPropagation();setCatPickerValue(\'' + p.id + '\', \'' + ctx + '\')" title="Selecionar esta categoria">usar</span>' +
+      (hasChildren ? '<span class="cat-group-count">' + children.length + '</span><span class="cat-group-arrow" id="catArr-' + p.id + '">▶</span>' : '') +
+      '</div>';
 
     if (hasChildren) {
-      // make the header toggle children on click
-      html += `<div class="cat-children" id="${groupId}">`;
-      children.forEach(c => {
+      html += '<div class="cat-children" id="' + groupId + '">';
+      children.forEach(function(c) {
         const cc = c.color || color;
-        html += `<div class="cat-option" id="catOpt-${c.id}" onclick="setCatPickerValue('${c.id}')">
-          <span class="cat-picker-dot" style="background:${cc}"></span>
-          <span style="font-size:.8rem">${c.icon||'▸'}</span>
-          <span>${esc(c.name)}</span>
-        </div>`;
+        html += '<div class="cat-option" id="catOpt-' + c.id + '" data-cat-id="' + c.id + '" onclick="setCatPickerValue(\'' + c.id + '\', \'' + ctx + '\')">' +
+          '<span class="cat-picker-dot" style="background:' + cc + '"></span>' +
+          '<span style="font-size:.8rem">' + (c.icon || '▸') + '</span>' +
+          '<span>' + esc(c.name) + '</span>' +
+          '</div>';
       });
-      html += `</div>`;
+      html += '</div>';
     }
   });
+
+  // Add "create category" quick button at bottom of picker
+  var createType = typeFilter === 'despesa' ? 'despesa' : typeFilter === 'receita' ? 'receita' : 'despesa';
+  html += '<div class="cat-create-btn" onclick="event.stopPropagation();quickCreateCategory(\'' + createType + '\', \'' + ctx + '\')" style="display:flex;align-items:center;gap:6px;padding:9px 12px;border-top:1px solid var(--border);cursor:pointer;color:var(--accent);font-size:.8rem;font-weight:600;" onmouseover="this.style.background=\'var(--accent-lt)\'" onmouseout="this.style.background=\'\'"><span>+</span><span>Nova categoria</span></div>';
 
   dd.innerHTML = html;
 
-  // Attach toggle handlers to group headers that have children
-  parents.forEach(p => {
-    const children = state.categories.filter(c => c.parent_id === p.id);
+  // Attach toggle handlers
+  parents.forEach(function(p) {
+    const children = cats.filter(function(c){ return c.parent_id === p.id; });
     if (!children.length) return;
     const gh = document.getElementById('catGH-' + p.id);
-    if (gh) gh.addEventListener('click', () => toggleCatGroup(p.id));
+    if (gh) gh.addEventListener('click', function(){ toggleCatGroup(p.id); });
   });
+
+  // Clear selected category if it doesn\'t match the new filter
+  if (typeFilter) {
+    const currentId = document.getElementById(c.inputId) && document.getElementById(c.inputId).value;
+    if (currentId) {
+      const cat = allCats.find(function(x){ return x.id === currentId; });
+      if (cat && cat.type !== typeFilter) setCatPickerValue(null, ctx);
+    }
+  }
 }
 
+// ctx = 'tx' (transaction modal) | 'sc' (scheduled modal)
+function _catCtx(ctx) {
+  ctx = ctx || 'tx';
+  return {
+    ddId:    ctx === 'sc' ? 'scCatPickerDropdown' : 'catPickerDropdown',
+    btnId:   ctx === 'sc' ? 'scCatPickerBtn'      : 'catPickerBtn',
+    wrapId:  ctx === 'sc' ? 'scCatPickerWrap'     : 'catPickerWrap',
+    inputId: ctx === 'sc' ? 'scCategoryId'        : 'txCategoryId',
+    labelId: ctx === 'sc' ? 'scCatPickerLabel'    : 'catPickerLabel',
+    dotId:   ctx === 'sc' ? 'scCatPickerDot'      : 'catPickerDot',
+    typeId:  ctx === 'sc' ? 'scTypeField'          : 'txTypeField',
+  };
+}
+
+let _catPickerCtx = null;
+
 function toggleCatGroup(parentId) {
-  const group = document.getElementById('catGroup-' + parentId);
-  const arrow = document.getElementById('catArr-' + parentId);
+  var group = document.getElementById('catGroup-' + parentId);
+  var arrow = document.getElementById('catArr-' + parentId);
   if (!group) return;
-  const isOpen = group.classList.toggle('open');
+  var isOpen = group.classList.toggle('open');
   if (arrow) arrow.classList.toggle('open', isOpen);
 }
 
-function toggleCatPicker() {
-  const dd = document.getElementById('catPickerDropdown');
-  const btn = document.getElementById('catPickerBtn');
+function toggleCatPicker(ctx) {
+  ctx = ctx || 'tx';
+  var c = _catCtx(ctx);
+  var dd  = document.getElementById(c.ddId);
+  var btn = document.getElementById(c.btnId);
   if (!dd || !btn) return;
-  catPickerOpen = !catPickerOpen;
-  dd.classList.toggle('open', catPickerOpen);
-  btn.classList.toggle('open', catPickerOpen);
-  if (catPickerOpen) {
-    // Auto-expand the group containing the currently selected category
-    const currentId = document.getElementById('txCategoryId').value;
-    if (currentId) {
-      const cat = state.categories.find(c => c.id === currentId);
-      if (cat?.parent_id) {
-        const group = document.getElementById('catGroup-' + cat.parent_id);
-        const arrow = document.getElementById('catArr-' + cat.parent_id);
-        if (group && !group.classList.contains('open')) {
-          group.classList.add('open');
-          if (arrow) arrow.classList.add('open');
-        }
-      }
+  var wasOpen = dd.classList.contains('open');
+  if (_catPickerCtx) _closeCatPickerByCtx(_catPickerCtx);
+  if (wasOpen) return;
+  _catPickerCtx = ctx;
+  dd.classList.add('open');
+  btn.classList.add('open');
+  var currentId = document.getElementById(c.inputId) ? document.getElementById(c.inputId).value : '';
+  if (currentId) {
+    var cat = (state.categories || []).find(function(x){ return x.id === currentId; });
+    if (cat && cat.parent_id) {
+      var grp = document.getElementById('catGroup-' + cat.parent_id);
+      var arr = document.getElementById('catArr-' + cat.parent_id);
+      if (grp && !grp.classList.contains('open')) { grp.classList.add('open'); if (arr) arr.classList.add('open'); }
     }
-    // Close picker when clicking outside
-    setTimeout(() => {
-      document.addEventListener('click', closeCatPickerOutside, { once: true });
-    }, 10);
   }
+  setTimeout(function() { document.addEventListener('click', _catPickerOutsideHandler, { once: true }); }, 10);
 }
 
-function closeCatPickerOutside(e) {
-  const wrap = document.getElementById('catPickerWrap');
+function _catPickerOutsideHandler(e) {
+  if (!_catPickerCtx) return;
+  var c = _catCtx(_catPickerCtx);
+  var wrap = document.getElementById(c.wrapId);
   if (wrap && !wrap.contains(e.target)) {
-    closeCatPicker();
-  } else if (catPickerOpen) {
-    // Re-attach listener if still open
-    setTimeout(() => {
-      document.addEventListener('click', closeCatPickerOutside, { once: true });
-    }, 10);
+    _closeCatPickerByCtx(_catPickerCtx);
+  } else {
+    setTimeout(function() { document.addEventListener('click', _catPickerOutsideHandler, { once: true }); }, 10);
   }
 }
 
-function closeCatPicker() {
-  catPickerOpen = false;
-  const dd = document.getElementById('catPickerDropdown');
-  const btn = document.getElementById('catPickerBtn');
-  if (dd) dd.classList.remove('open');
+function _closeCatPickerByCtx(ctx) {
+  var c = _catCtx(ctx);
+  var dd  = document.getElementById(c.ddId);
+  var btn = document.getElementById(c.btnId);
+  if (dd)  dd.classList.remove('open');
   if (btn) btn.classList.remove('open');
+  if (_catPickerCtx === ctx) _catPickerCtx = null;
 }
 
-function setCatPickerValue(catId) {
-  // Update hidden input
-  const input = document.getElementById('txCategoryId');
+function closeCatPicker() { _closeCatPickerByCtx('tx'); }
+
+function setCatPickerValue(catId, ctx) {
+  ctx = ctx || 'tx';
+  var c = _catCtx(ctx);
+  var input = document.getElementById(c.inputId);
   if (input) input.value = catId || '';
-
-  // Update button label
-  const label = document.getElementById('catPickerLabel');
-  const dot = document.getElementById('catPickerDot');
-
+  var label = document.getElementById(c.labelId);
+  var dot   = document.getElementById(c.dotId);
   if (!catId) {
     if (label) { label.textContent = '— Sem categoria —'; label.style.color = 'var(--muted)'; }
     if (dot) dot.style.display = 'none';
   } else {
-    const cat = state.categories.find(c => c.id === catId);
+    var cat = (state.categories || []).find(function(x){ return x.id === catId; });
     if (cat && label) {
-      // Show parent > child breadcrumb if it's a subcategory
-      const parent = cat.parent_id ? state.categories.find(c => c.id === cat.parent_id) : null;
-      label.textContent = parent ? `${parent.icon||'📦'} ${parent.name}  ›  ${cat.icon||'▸'} ${cat.name}` : `${cat.icon||'📦'} ${cat.name}`;
+      var parent = cat.parent_id ? (state.categories || []).find(function(x){ return x.id === cat.parent_id; }) : null;
+      label.textContent = parent
+        ? (parent.icon||'📦') + ' ' + parent.name + '  ›  ' + (cat.icon||'▸') + ' ' + cat.name
+        : (cat.icon||'📦') + ' ' + cat.name;
       label.style.color = 'var(--text)';
     }
     if (dot && cat) { dot.style.background = cat.color || 'var(--accent)'; dot.style.display = ''; }
   }
-
-  // Highlight selected option
-  document.querySelectorAll('.cat-option').forEach(el => {
-    el.classList.toggle('selected', el.id === 'catOpt-' + catId);
-  });
-
-  closeCatPicker();
+  var dd = document.getElementById(c.ddId);
+  if (dd) {
+    dd.querySelectorAll('.cat-option').forEach(function(el) {
+      el.classList.toggle('selected', el.getAttribute('data-cat-id') === catId);
+    });
+  }
+  _closeCatPickerByCtx(ctx);
 }
+
 
 
 /* ═══════════════════════════════════════════════════════

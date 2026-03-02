@@ -306,10 +306,9 @@ function openScheduledModal(id='') {
     if(sc?.transfer_to_account_id) trEl.value = sc.transfer_to_account_id;
   }
 
-  // Populate category select
-  const cEl = document.getElementById('scCategoryId');
-  cEl.innerHTML = '<option value="">— Sem categoria —</option>' + state.categories.map(c=>`<option value="${c.id}">${c.icon||''} ${esc(c.name)}</option>`).join('');
-  if(sc?.category_id) cEl.value = sc.category_id;
+  // Populate category picker (same as transaction modal)
+  buildCatPicker(null, 'sc');
+  setCatPickerValue(sc?.category_id || null, 'sc');
 
   // Payee
   setPayeeField(sc?.payee_id||null, 'sc');
@@ -382,6 +381,8 @@ function setScType(type) {
   if(trLabel) trLabel.textContent = isCardPayment ? 'Cartão de Crédito (Destino) *' : 'Conta Destino *';
   // Filter source account: card_payment origin cannot be a credit card account
   _filterScAccountOrigin(isCardPayment);
+  // Rebuild category picker for this type
+  buildCatPicker(null, 'sc');
 }
 
 function _filterScAccountOrigin(excludeCreditCards) {
@@ -574,14 +575,20 @@ async function confirmRegisterOccurrence() {
       is_transfer: true,
       is_card_payment: sc.type==='card_payment',
       transfer_to_account_id: sc.account_id,
-      linked_transfer_id: txData.id,
       updated_at: new Date().toISOString(),
     };
-    const {data: pairedResult, error: pairedErr} = await sb.from('transactions').insert(pairedTx).select().single();
+    // Try with linked_transfer_id first; fall back without if column doesn't exist yet
+    let pairedResult, pairedErr;
+    ({data: pairedResult, error: pairedErr} = await sb.from('transactions')
+      .insert({...pairedTx, linked_transfer_id: txData.id}).select().single());
+    if(pairedErr && pairedErr.message?.includes('linked_transfer_id')) {
+      ({data: pairedResult, error: pairedErr} = await sb.from('transactions')
+        .insert(pairedTx).select().single());
+    }
     if(pairedErr) {
       toast('Transação salva, mas erro ao criar lançamento de entrada: ' + pairedErr.message, 'warning');
     } else if(pairedResult?.id) {
-      await sb.from('transactions').update({linked_transfer_id: pairedResult.id}).eq('id', txData.id);
+      await sb.from('transactions').update({linked_transfer_id: pairedResult.id}).eq('id', txData.id).then(()=>{}).catch(()=>{});
     }
   }
 

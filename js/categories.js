@@ -164,6 +164,33 @@ async function saveCategory(){
   const data={name:document.getElementById('categoryName').value.trim(),type:document.getElementById('categoryType').value,parent_id:document.getElementById('categoryParent').value||null,icon:document.getElementById('categoryIcon').value||'📦',color:document.getElementById('categoryColor').value};
   if(!data.name){toast('Informe o nome','error');return;}
   if(!id) data.family_id=famId(); let err;if(id){({error:err}=await sb.from('categories').update(data).eq('id',id));}else{({error:err}=await sb.from('categories').insert(data));}
-  if(err){toast(err.message,'error');return;}toast('Categoria salva!','success');closeModal('categoryModal');await loadCategories();populateSelects();renderCategories();
+  if(err){toast(err.message,'error');return;}
+  toast('Categoria salva!','success');
+  closeModal('categoryModal');
+  await loadCategories();
+  populateSelects();
+  renderCategories();
+  // If called from a transaction/scheduled modal, select the new category there
+  if(window._catSaveCallback) {
+    const cb = window._catSaveCallback;
+    window._catSaveCallback = null;
+    // Find the newly saved category by name+type
+    const saved = state.categories.find(c => c.name === data.name && c.type === data.type && !id);
+    if(saved) cb(saved.id);
+  }
 }
 async function deleteCategory(id){if(!confirm('Excluir esta categoria?'))return;const{error}=await sb.from('categories').delete().eq('id',id);if(error){toast(error.message,'error');return;}toast('Removida','success');await loadCategories();populateSelects();renderCategories();}
+
+// ── Quick create category from transaction/scheduled modal ────────────────
+// Opens the category modal pre-filled with the correct type, and after saving
+// automatically selects the new category in the calling picker (ctx = 'tx'|'sc').
+function quickCreateCategory(type, ctx) {
+  ctx = ctx || 'tx';
+  type = type || 'despesa';
+  // Store callback: will be called with the new category id after save
+  window._catSaveCallback = function(catId) {
+    buildCatPicker(type, ctx);
+    setCatPickerValue(catId, ctx);
+  };
+  openCategoryModal('', '', type);
+}
