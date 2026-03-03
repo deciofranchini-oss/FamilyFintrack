@@ -1,4 +1,24 @@
-let _appSettingsCache = null; // in-memory cache after first load
+let _appSettingsCache = null;
+
+// ── Helpers: sanitize values coming from storage/DB ─────────────────────────
+async function resolveMaybePromise(v){
+  try{
+    if(v && typeof v === 'object' && typeof v.then === 'function'){
+      return await v;
+    }
+  }catch(e){}
+  return v;
+}
+
+async function sanitizeLogoUrl(v){
+  v = await resolveMaybePromise(v);
+  if(v === null || v === undefined) return '';
+  if(typeof v !== 'string') v = String(v);
+  const bad = v.includes('[object Promise]') || v.trim()==='[object Promise]' || v.trim()==='undefined';
+  if(bad) return '';
+  return v.trim();
+}
+ // in-memory cache after first load
 
 async function loadAppSettings() {
   if (!sb) return;
@@ -7,9 +27,14 @@ async function loadAppSettings() {
     if (error) throw error;
     _appSettingsCache = {};
     (data || []).forEach(row => { _appSettingsCache[row.key] = row.value; });
-    // Apply logo override (if any)
-    const logo = _appSettingsCache['app_logo_url'] || localStorage.getItem('app_logo_url');
-    if (logo && typeof setAppLogo === 'function') setAppLogo(logo);
+    // Apply logo override (if any) - sanitize to avoid '[object Promise]' corruption
+let logoRaw = (_appSettingsCache && _appSettingsCache['app_logo_url']) || localStorage.getItem('app_logo_url');
+const logo = await sanitizeLogoUrl(logoRaw);
+if(!logo && logoRaw && String(logoRaw).includes('[object Promise]')){
+  try{ localStorage.removeItem('app_logo_url'); }catch(e){}
+}
+if (logo && typeof setAppLogo === 'function') setAppLogo(logo);
+
 
     // Apply menu visibility (if configured)
     try { applyMenuVisibility(_getMenuVisibilityFromCache()); } catch {}
@@ -37,6 +62,9 @@ async function loadAppSettings() {
 }
 
 async function saveAppSetting(key, value) {
+  value = await resolveMaybePromise(value);
+  if(key==='app_logo_url' && value && typeof value!=='string') value = String(value);
+  if(key==='app_logo_url' && value && String(value).includes('[object Promise]')) value = '';
   // Always persist locally as fallback
   if (typeof value === 'object') {
     try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
@@ -57,7 +85,11 @@ async function saveAppSetting(key, value) {
 }
 
 async function getAppSetting(key, defaultValue = null) {
-  if (_appSettingsCache && key in _appSettingsCache) return _appSettingsCache[key];
+  if (_appSettingsCache && key in _appSettingsCache) {
+    const v = _appSettingsCache[key];
+    if(key==='app_logo_url' && v && String(v).includes('[object Promise]')) return '';
+    return v;
+  }
   // Fallback localStorage
   const local = localStorage.getItem(key);
   if (local !== null) {
@@ -145,9 +177,9 @@ async function testEmailJSConnection() {
       ? svc : (currentUser?.email || 'teste@fintrack.app');
     await emailjs.send(svc, tpl, {
       to_email:       testEmail,
-      from_name:      'J.F. Family FinTrack',
+      from_name:      'Family FinTrack',
       subject:        'FinTrack — Teste de conexão ✅',
-      message:        'Este é um e-mail de teste enviado pelo JF Family FinTrack para confirmar que a configuração do EmailJS está correta. Se recebeu este e-mail, está tudo funcionando!',
+      message:        'Este é um e-mail de teste enviado pelo Family FinTrack para confirmar que a configuração do EmailJS está correta. Se recebeu este e-mail, está tudo funcionando!',
       report_period:  'Teste — ' + new Date().toLocaleDateString('pt-BR'),
       report_view:    'Teste de conexão',
       report_income:  'R$ 1.000,00',
@@ -503,8 +535,11 @@ async function saveAppLogo() {
       finalUrl = val;
     }
 
-    await saveAppSetting('app_logo_url', finalUrl);
-    if(typeof setAppLogo === 'function') setAppLogo(finalUrl);
+    finalUrl = await sanitizeLogoUrl(finalUrl);
+if(!finalUrl){ toast('URL do logotipo inválida. Tente novamente.','error'); return; }
+await saveAppSetting('app_logo_url', finalUrl);
+if(typeof setAppLogo === 'function') setAppLogo(finalUrl);
+
     const previewEl = document.getElementById('appLogoPreview');
     if(previewEl) previewEl.src = finalUrl;
     toast('Logotipo atualizado (sincronizado)','success');
@@ -569,20 +604,13 @@ async function setUserPreference(screen, key, value){
 
 function loadTxCompactPreference(){
   const el = document.getElementById('txCompactToggle');
-  if(!el) return;
-  const pref = getUserPreference('transactions','compact_view');
+  let pref = null;
+  try{ if(typeof getUserPreference==='function') pref = getUserPreference('transactions','compact_view'); }catch(e){}
   const isCompact = pref===true || pref==='true' || localStorage.getItem('tx_compact_view')==='1';
-  el.checked = !!isCompact;
-  const knob = document.getElementById('txCompactKnob');
-  if(knob){
-    knob.style.background = isCompact ? 'var(--accent)' : '#ccc';
-    document.getElementById('txCompactStyle')?.remove();
-    const st = document.createElement('style');
-    st.id='txCompactStyle';
-    st.textContent = `#txCompactKnob::before{transform:translateX(${isCompact?20:0}px)}`;
-    document.head.appendChild(st);
-  }
+  if(el) el.checked = !!isCompact;
   document.body.classList.toggle('tx-compact', !!isCompact);
+  const btn = document.getElementById('compactToggleBtn');
+  if(btn) btn.classList.toggle('is-active', !!isCompact);
 }
 
 async function saveTxCompactPreference(){
