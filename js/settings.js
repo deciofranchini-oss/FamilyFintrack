@@ -10,6 +10,74 @@ async function resolveMaybePromise(v){
   return v;
 }
 
+function getChartPalette(){
+  const def=['#2a6049','#1e5ba8','#b45309','#c0392b','#7c3aed','#2a7a4a','#3d7a5e','#64748b'];
+  const raw = getAppSetting('chart_palette', null) || localStorage.getItem('chart_palette');
+  try{
+    const arr = raw ? (typeof raw==='string' ? JSON.parse(raw) : raw) : null;
+    if(Array.isArray(arr) && arr.length) return arr.map(c=>String(c||'').trim()).filter(Boolean);
+  }catch(e){}
+  return def;
+}
+
+function applyChartPaletteToUI(){
+  const pal = getChartPalette();
+  for(let i=1;i<=8;i++){
+    const el=document.getElementById('pal'+i);
+    if(el) el.value = pal[i-1] || pal[0] || '#2a6049';
+  }
+}
+
+async function loadNotifyEmailToUI(){
+  const el=document.getElementById('notifyEmailInput');
+  if(!el) return;
+  const v = getAppSetting('notify_email_addr','') || localStorage.getItem('notify_email_addr') || '';
+  el.value = v || '';
+}
+
+function resetChartPalette(){
+  const def=['#2a6049','#1e5ba8','#b45309','#c0392b','#7c3aed','#2a7a4a','#3d7a5e','#64748b'];
+  for(let i=1;i<=8;i++){
+    const el=document.getElementById('pal'+i);
+    if(el) el.value = def[i-1];
+  }
+  toast('Paleta padrão restaurada (clique em Salvar).','info');
+}
+
+async function saveAllSettings(){
+  // Palette
+  const pal=[];
+  for(let i=1;i<=8;i++){
+    const el=document.getElementById('pal'+i);
+    if(el) pal.push(el.value);
+  }
+  const emailEl=document.getElementById('notifyEmailInput');
+  const notifyEmail = emailEl ? (emailEl.value||'').trim() : '';
+
+  // Persist
+  await saveAppSetting('chart_palette', pal);
+  localStorage.setItem('chart_palette', JSON.stringify(pal));
+
+  await saveAppSetting('notify_email_addr', notifyEmail);
+  if(notifyEmail) localStorage.setItem('notify_email_addr', notifyEmail); else localStorage.removeItem('notify_email_addr');
+
+  // Menu visibility settings (if present)
+  try{ if(typeof saveMenuVisibilitySettings==='function') await saveMenuVisibilitySettings(); }catch(e){}
+
+  toast('Configurações salvas.','success');
+
+  // Re-render charts if currently visible
+  try{
+    if(state.currentPage==='dashboard') {
+      if(typeof renderCashflowChart==='function') await renderCashflowChart();
+      if(typeof renderCategoryChart==='function') await renderCategoryChart();
+    }
+    if(state.currentPage==='reports') {
+      if(typeof renderReports==='function') await renderReports();
+    }
+  }catch(e){}
+}
+
 async function sanitizeLogoUrl(v){
   v = await resolveMaybePromise(v);
   if(v === null || v === undefined) return '';
@@ -735,3 +803,6 @@ async function resetMenuVisibility() {
   applyMenuVisibility(DEFAULT_MENU_VISIBILITY);
   toast('Menu restaurado ✓', 'success');
 }
+
+// Expose for inline handlers
+try{ window.saveAllSettings=saveAllSettings; window.resetChartPalette=resetChartPalette; }catch(e){}
