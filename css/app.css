@@ -80,13 +80,11 @@ body{font-family:var(--font-sans);background:var(--bg);color:var(--text);height:
 /* ACCOUNT CARDS */
 .account-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px;}
 /* Account Groups */
-.account-group-section{margin-bottom:32px;}
-.account-group-header{display:flex;align-items:center;gap:12px;margin-bottom:14px;padding:10px 14px;background:var(--surface);border-radius:var(--r);border:1px solid var(--border);box-shadow:var(--shadow-sm);}
-.account-group-badge{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:10px;font-size:1.1rem;flex-shrink:0;}
-.account-group-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;}
-.account-group-title{font-weight:700;font-size:.92rem;color:var(--text);line-height:1.2;}
-.account-group-meta{font-size:.72rem;color:var(--muted);font-weight:500;}
-.account-group-sum{font-family:var(--font-serif);font-size:.95rem;font-weight:600;color:var(--accent);flex-shrink:0;}
+.account-group-section{margin-bottom:28px;}
+.account-group-header{display:flex;align-items:center;gap:10px;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid var(--border);}
+.account-group-badge{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;font-size:1rem;flex-shrink:0;}
+.account-group-title{font-weight:600;font-size:.95rem;color:var(--text);flex:1;}
+.account-group-sum{font-family:var(--font-serif);font-size:.9rem;font-weight:500;color:var(--accent);}
 .account-group-actions{display:none;gap:4px;}
 .account-group-header:hover .account-group-actions{display:flex;}
 .account-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:18px;cursor:pointer;transition:all .18s;position:relative;overflow:hidden;box-shadow:var(--shadow-sm);}
@@ -1238,13 +1236,3 @@ canvas { cursor: default; }
   font-size:.75rem;font-weight:700;color:#fff;flex-shrink:0;
 }
 .topbar-user-name { font-size:.78rem;font-weight:600;color:var(--text2); }
-/* ── Group Manager List ────────────────────────────── */
-.group-list-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:var(--surface);transition:box-shadow .15s;}
-.group-list-item:hover{box-shadow:var(--shadow-sm);}
-.group-list-emoji{font-size:1.35rem;flex-shrink:0;line-height:1;}
-.group-list-info{flex:1;min-width:0;display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
-.group-list-name{font-weight:600;font-size:.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.group-list-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;border:1px solid rgba(0,0,0,.08);}
-.group-list-count{font-size:.72rem;color:var(--muted);}
-.group-list-actions{display:flex;gap:4px;flex-shrink:0;}
-.empty-state-sm{font-size:.85rem;color:var(--muted);text-align:center;padding:16px;}
