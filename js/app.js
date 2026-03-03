@@ -87,7 +87,9 @@ function setAppLogo(url){
   });
 }
 
-let state={accounts:[],groups:[],categories:[],payees:[],transactions:[],budgets:[],txPage:0,txPageSize:50,txTotal:0,txSortField:'date',txSortAsc:false,txFilter:{search:'',month:'',account:'',type:''},txView:'flat',currentPage:'dashboard',chartInstances:{},privacyMode:false};
+// NOTE: txFilter is part of the app's internal contract (used across modules).
+// Keep keys stable to avoid breaking filtering and saved preferences.
+let state={accounts:[],groups:[],categories:[],payees:[],transactions:[],budgets:[],txPage:0,txPageSize:50,txTotal:0,txSortField:'date',txSortAsc:false,txFilter:{search:'',month:'',account:'',type:'',status:''},txView:'flat',currentPage:'dashboard',chartInstances:{},privacyMode:false};
 
 async function bootApp(){
   // Logos (can be overridden by app_settings)

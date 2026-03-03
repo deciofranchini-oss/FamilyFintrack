@@ -239,6 +239,9 @@ async function loadTransactions(){
   }
   if(f.account)q=q.eq('account_id',f.account);if(f.search)q=q.ilike('description','%'+f.search+'%');
   if(f.type==='income')q=q.gt('amount',0).eq('is_transfer',false);else if(f.type==='expense')q=q.lt('amount',0).eq('is_transfer',false);else if(f.type==='transfer')q=q.eq('is_transfer',true).eq('is_card_payment',false);else if(f.type==='card_payment')q=q.eq('is_card_payment',true);
+  // Status filter: pending | confirmed | all
+  if(f.status==='pending') q=q.eq('status','pending');
+  else if(f.status==='confirmed') q=q.eq('status','confirmed');
   const{data,count,error}=await q;if(error){toast(error.message,'error');return;}state.transactions=data||[];state.txTotal=count||0;renderTransactions();
 }
 function filterTransactions(){
@@ -246,6 +249,7 @@ function filterTransactions(){
   state.txFilter.month=document.getElementById('txMonth').value;
   state.txFilter.account=document.getElementById('txAccount').value;
   state.txFilter.type=document.getElementById('txType').value;
+  state.txFilter.status=(document.getElementById('txStatusFilter')?.value)||'';
   state.txPage=0;
   if(state.txView==='flat') document.getElementById('txSummaryBar').style.display='none';
   loadTransactions();
@@ -686,6 +690,9 @@ async function openTxDetail(id) {
   if (error || !data) { toast('Transação não encontrada', 'error'); return; }
   const t = data;
 
+  // Cache current status for quick toggle actions
+  window._txDetailStatus = (t.status || 'confirmed');
+
   const isIncome  = t.amount >= 0;
   const amtClass  = isIncome ? 'amount-pos' : 'amount-neg';
   const typeLabel = t.is_card_payment ? '💳 Pgto. Cartão' : t.is_transfer ? '🔄 Transferência' : isIncome ? '📈 Receita' : '📉 Despesa';
@@ -738,6 +745,14 @@ async function openTxDetail(id) {
     <div style="text-align:center;padding:22px 20px 16px;border-bottom:1px solid var(--border)">
       <div class="${amtClass}" style="font-size:2rem;font-weight:700;letter-spacing:-.02em">${fmt(t.amount, t.currency||'BRL')}</div>
       <div style="margin-top:4px;font-size:.8rem;color:var(--muted)">${typeLabel} &nbsp;·&nbsp; ${fmtDate(t.date)}</div>
+      <div style="margin-top:10px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+        <span class="badge" style="font-size:.78rem;font-weight:700;background:${(t.status||'confirmed')==='pending'?'var(--yellow-lt,#fef9c3)':'var(--green-lt)'};color:${(t.status||'confirmed')==='pending'?'#92400e':'var(--green)'};border:1px solid ${(t.status||'confirmed')==='pending'?'#fcd34d':'var(--green)'}30">
+          ${(t.status||'confirmed')==='pending'?'⏳ Pendente':'✅ Confirmada'}
+        </span>
+        <button class="btn btn-ghost btn-sm" onclick="toggleTxDetailStatus()" style="font-weight:700">
+          ${(t.status||'confirmed')==='pending'?'✅ Confirmar':'⏳ Marcar pendente'}
+        </button>
+      </div>
     </div>
     <div style="padding:4px 20px 8px">
       <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border)">
@@ -770,4 +785,27 @@ function _txDetailAction(action) {
   if (action === 'edit') editTransaction(_txDetailId);
   else if (action === 'dup') duplicateTransaction(_txDetailId);
   else if (action === 'del') deleteTransaction(_txDetailId);
+}
+
+// Quick toggle: ✅ Confirmar / ⏳ Pendente directly from the transaction detail
+async function toggleTxDetailStatus() {
+  if (!_txDetailId) return;
+  const cur = (window._txDetailStatus || 'confirmed');
+  const next = (cur === 'pending') ? 'confirmed' : 'pending';
+  try {
+    const { error } = await sb.from('transactions')
+      .update({ status: next, updated_at: new Date().toISOString() })
+      .eq('id', _txDetailId);
+    if (error) { toast(error.message, 'error'); return; }
+    window._txDetailStatus = next;
+    // Refresh lists and dashboard totals
+    await loadTransactions();
+    if (state.currentPage === 'dashboard') loadDashboard();
+    // Re-open detail to reflect the new status (keeps the user in context)
+    await openTxDetail(_txDetailId);
+    toast(next === 'pending' ? 'Marcada como pendente' : 'Confirmada', 'success');
+  } catch (e) {
+    toast('Erro: ' + e.message, 'error');
+    console.error(e);
+  }
 }
