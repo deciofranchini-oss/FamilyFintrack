@@ -274,3 +274,6 @@ if('serviceWorker' in navigator){
   });
 }
 
+
+// Expose for inline handlers
+try{ window.toggleCompactMode = toggleCompactMode; }catch(e){}
