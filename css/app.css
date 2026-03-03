@@ -1339,14 +1339,3 @@ body.tx-compact .tx-table .badge{
 body.tx-compact #txCompactKnob{ background:var(--accent) !important; }
 body.tx-compact #txCompactKnob::before{ transform:translateX(20px); }
 #compactToggleBtn.is-active{ color:var(--accent) !important; }
-
-
-/* Topbar icon size */
-.topbar-icon-btn{
-  font-size: 20px !important;
-  width: 40px;
-  height: 40px;
-}
-@media (max-width: 520px){
-  .topbar-icon-btn{ font-size:22px !important; width:42px; height:42px; }
-}
