@@ -81,16 +81,7 @@ body{font-family:var(--font-sans);background:var(--bg);color:var(--text);height:
 }
 
 
-
-/* Settings layout fix: keep sections centered and stacked */
-#page-settings{
-  max-width: 980px;
-  margin: 0 auto;
-}
-#page-settings .settings-section{
-  width: 100%;
-  margin-bottom: 14px;
-}
-@media (max-width: 1020px){
-  #page-settings{ max-width: 100%; }
-}
+/* Settings layout fix (safe) */
+#page-settings{ max-width: 980px; margin: 0 auto; }
+#page-settings .settings-section{ width:100%; margin-bottom: 14px; }
+@media (max-width: 1020px){ #page-settings{ max-width:100%; } }
