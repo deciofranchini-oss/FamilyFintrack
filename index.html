@@ -219,7 +219,11 @@
       <button class="nav-item" onclick="navigate('categories')" id=\"categoriesNav\"><span class="ni-icon">🏷</span>Categorias</button>
       <button class="nav-item" onclick="navigate('payees')" id=\"payeesNav\"><span class="ni-icon">👥</span>Beneficiários</button>
     </div>
-</div>
+    <div class="nav-section">
+      <div class="nav-label">Externo</div>
+      <a class="nav-item" href="https://deciofranchini-oss.github.io/objetivo" target="_blank" rel="noopener noreferrer" style="text-decoration:none;font-family:inherit"><span class="ni-icon">🎓</span>Gerenciamento Escola</a>
+    </div>
+  </div>
   <div class="sidebar-footer" style="display:flex;flex-direction:column;gap:3px">
     <button class="nav-item" onclick="doLogout()" style="color:var(--red);font-size:.8rem;padding:7px 10px"><span class="ni-icon" style="font-size:.85rem">↩</span>Sair</button>
   </div>
@@ -250,13 +254,7 @@
         <span class="topbar-user-name" id="topbarUserName"></span>
       </div>
       <button class="btn btn-primary btn-sm" id="globalAddBtn" onclick="openTransactionModal()">+ Nova Transação</button>
-    <a id="schoolTopBtn" href="https://deciofranchini-oss.github.io/objetivo" target="_blank" rel="noopener noreferrer"
-   title="Gerenciamento da escola"
-   style="display:flex;align-items:center;justify-content:center;text-decoration:none;color:var(--muted);padding:6px;border-radius:6px;cursor:pointer;transition:color 0.2s"
-   onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--muted)'">
-  🎓
-</a>
-</div>
+    </div>
   </header>
 
   <div class="content">
