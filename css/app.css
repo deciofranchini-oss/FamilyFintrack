@@ -2035,3 +2035,420 @@ input[type="color"] { padding: 4px; height: 40px; cursor: pointer; }
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+
+/* ═══════════════════════════════════════════════════════════════
+   CHART ENHANCEMENTS — Premium color palette + visual polish
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Chart color palette (CSS variables for JS to consume) ── */
+:root {
+  /* Primary chart palette — vibrant, accessible, Apple-esque */
+  --chart-1:  #007AFF;   /* iOS Blue */
+  --chart-2:  #34C759;   /* iOS Green */
+  --chart-3:  #FF9500;   /* iOS Amber */
+  --chart-4:  #FF3B30;   /* iOS Red */
+  --chart-5:  #AF52DE;   /* iOS Purple */
+  --chart-6:  #30B0C7;   /* iOS Teal */
+  --chart-7:  #FF6B35;   /* Coral */
+  --chart-8:  #FFCC00;   /* iOS Yellow */
+  --chart-9:  #5856D6;   /* Indigo */
+  --chart-10: #FF2D55;   /* iOS Pink */
+  --chart-11: #00C7BE;   /* Cyan */
+  --chart-12: #A2845E;   /* Brown */
+
+  /* Chart container styling */
+  --chart-bg:      transparent;
+  --chart-grid:    rgba(60,60,67,.08);
+  --chart-tick:    rgba(60,60,67,.45);
+  --chart-tooltip-bg:   rgba(255,255,255,.96);
+  --chart-tooltip-border: rgba(60,60,67,.12);
+}
+
+/* ── Chart wrapper — breathing room + card context ── */
+.card canvas,
+canvas#cashflowChart,
+canvas#categoryChart,
+canvas#reportCatChart,
+canvas#reportIncomeChart,
+canvas#reportAccountChart,
+canvas#reportTrendChart,
+canvas#forecastChart {
+  display: block;
+  width: 100% !important;
+  border-radius: 0 0 var(--r) var(--r);
+}
+
+/* ── Chart containers — subtle top separator ── */
+.card > canvas:first-child,
+.card > canvas {
+  padding: 0 4px 4px;
+}
+
+/* ── Forecast chart special wrap ── */
+.forecast-chart-wrap {
+  position: relative;
+  height: 240px;
+  padding: 8px 0 4px;
+}
+.forecast-chart-wrap canvas {
+  border-radius: var(--r-sm);
+}
+
+/* ── Legend styling ── */
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 10px 16px 14px;
+  justify-content: center;
+}
+.chart-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: .72rem;
+  font-weight: 500;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color .15s, opacity .15s;
+  user-select: none;
+}
+.chart-legend-item:hover { color: var(--text2); }
+.chart-legend-item.hidden { opacity: .35; }
+.chart-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.chart-legend-line {
+  width: 18px;
+  height: 3px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* ── Chart filter bar enhancements ── */
+#cashflowAccountFilter {
+  font-size: .78rem;
+  font-weight: 500;
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text2);
+  max-width: 200px;
+}
+
+/* ── Card header above charts ── */
+.card .card-header {
+  padding: 14px 16px 10px;
+  border-bottom: .5px solid var(--separator);
+}
+
+/* ── Stat numbers — financial display refinement ── */
+.stat-value {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -.04em;
+  line-height: 1;
+  background: linear-gradient(135deg, var(--text) 0%, var(--text2) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Green value variant */
+.stat-value.pos,
+.stat-value[data-positive="true"] {
+  background: linear-gradient(135deg, #28C840 0%, #34C759 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Red value variant */
+.stat-value.neg,
+.stat-value[data-negative="true"] {
+  background: linear-gradient(135deg, #E63C32 0%, #FF3B30 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Dashboard stat cards — premium feel ── */
+.stat-card {
+  background: var(--surface);
+  border-radius: var(--r);
+  padding: 18px 18px 16px;
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  overflow: hidden;
+  transition: box-shadow .2s var(--ease-out), transform .2s var(--ease-out);
+}
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent) 0%, var(--teal) 100%);
+  opacity: 0;
+  transition: opacity .2s;
+}
+.stat-card:hover {
+  box-shadow: var(--shadow);
+  transform: translateY(-2px);
+}
+.stat-card:hover::before {
+  opacity: 1;
+}
+
+/* ── Specific stat card color accents ── */
+.stat-card.income::before  { background: linear-gradient(90deg, #28C840, #34C759); opacity:1; }
+.stat-card.expense::before { background: linear-gradient(90deg, #E63C32, #FF3B30); opacity:1; }
+.stat-card.balance::before { background: linear-gradient(90deg, #007AFF, #5856D6); opacity:1; }
+.stat-card.savings::before { background: linear-gradient(90deg, #FF9500, #FFCC00); opacity:1; }
+
+/* ── Report chart cards ── */
+.report-chart-card {
+  background: var(--surface);
+  border-radius: var(--r);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  transition: box-shadow .2s;
+}
+.report-chart-card:hover {
+  box-shadow: var(--shadow);
+}
+
+/* ── Progress bars (budgets) — gradient fill ── */
+.budget-bar-fill {
+  background: linear-gradient(90deg, var(--accent) 0%, var(--teal) 100%);
+  border-radius: var(--r-pill);
+  transition: width .6s var(--ease-out);
+  height: 100%;
+}
+.budget-bar-fill.warning {
+  background: linear-gradient(90deg, var(--amber) 0%, #FFCC00 100%);
+}
+.budget-bar-fill.danger {
+  background: linear-gradient(90deg, var(--red) 0%, #FF6B35 100%);
+}
+.budget-bar-track {
+  background: rgba(0,0,0,.06);
+  border-radius: var(--r-pill);
+  height: 6px;
+  overflow: hidden;
+}
+
+/* ── Amount badges with gradients ── */
+.amount-pos {
+  color: #28A745;
+  font-weight: 600;
+}
+.amount-neg {
+  color: var(--red);
+  font-weight: 600;
+}
+
+/* ── Transaction row hover with left accent ── */
+tbody tr {
+  position: relative;
+  transition: background .12s;
+}
+tbody tr::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 4px; bottom: 4px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: transparent;
+  transition: background .15s;
+}
+tbody tr:hover::before {
+  background: var(--accent);
+}
+
+/* ── Category icons / color dots in charts ── */
+.cat-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+/* ── Tooltip for charts — glass style ── */
+.chartjs-tooltip {
+  background: var(--chart-tooltip-bg) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: .5px solid var(--chart-tooltip-border) !important;
+  border-radius: var(--r-sm) !important;
+  box-shadow: var(--shadow) !important;
+  font-family: var(--font-sans) !important;
+  font-size: .8rem !important;
+  color: var(--text) !important;
+  padding: 10px 14px !important;
+  pointer-events: none !important;
+}
+
+/* ── Dashboard grid — better spacing ── */
+.dash-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+  padding: 0 0 12px;
+}
+
+/* ── Account cards — colored left border ── */
+.account-card {
+  border-left: 3px solid transparent;
+  transition: border-color .2s, box-shadow .2s, transform .2s;
+}
+.account-card:hover {
+  border-left-color: var(--account-color, var(--accent));
+  transform: translateY(-2px);
+  box-shadow: var(--shadow);
+}
+
+/* ── KPI trend indicator ── */
+.trend-up   { color: var(--green); font-size: .72rem; font-weight: 600; }
+.trend-down { color: var(--red);   font-size: .72rem; font-weight: 600; }
+.trend-flat { color: var(--muted); font-size: .72rem; font-weight: 600; }
+
+/* ── Empty state — more polished ── */
+.empty-state {
+  text-align: center;
+  padding: 56px 20px;
+  color: var(--muted2);
+}
+.empty-state-icon {
+  font-size: 2.5rem;
+  margin-bottom: 12px;
+  opacity: .5;
+}
+.empty-state p {
+  font-size: .875rem;
+  color: var(--muted);
+  max-width: 260px;
+  margin: 0 auto;
+}
+
+/* ── Report toolbar — glassmorphism header ── */
+#reportToolbar {
+  background: rgba(255,255,255,.80);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: .5px solid var(--separator);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+/* ── Chart section cards glow on hover ── */
+.card:has(canvas):hover {
+  box-shadow: var(--shadow);
+}
+
+/* ── Refined card inner padding for charts ── */
+.card-chart-wrap {
+  padding: 8px 12px 12px;
+}
+
+/* ── Canvas cursor ── */
+canvas { cursor: default; }
+
+/* ── Animação de entrada para cards ── */
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.card, .stat-card {
+  animation: fadeSlideUp .3s var(--ease-out) both;
+}
+
+/* ── Gradient backgrounds para seção de relatórios ── */
+.section-header-gradient {
+  background: linear-gradient(135deg, var(--accent) 0%, var(--teal) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  font-weight: 700;
+}
+
+/* ── Import progress bar ── */
+.import-progress-bar-track {
+  background: rgba(0,0,0,.06);
+  border-radius: var(--r-pill);
+  height: 6px;
+  overflow: hidden;
+  margin: 8px 0;
+}
+.import-progress-bar-fill {
+  background: linear-gradient(90deg, var(--accent) 0%, var(--teal) 100%);
+  border-radius: var(--r-pill);
+  height: 100%;
+  transition: width .3s var(--ease-out);
+}
+
+/* ── Scheduled transactions badge ── */
+.scheduled-badge {
+  font-size: .65rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  background: var(--purple-lt);
+  color: var(--purple);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+/* ── IOF badge ── */
+.iof-badge {
+  font-size: .65rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  background: var(--amber-lt);
+  color: var(--amber);
+}
+
+/* ── Toggle switch (iOS style) ── */
+.ios-toggle {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 44px;
+  height: 26px;
+  background: rgba(120,120,128,.32);
+  border-radius: 13px;
+  cursor: pointer;
+  position: relative;
+  transition: background .2s;
+  flex-shrink: 0;
+}
+.ios-toggle::after {
+  content: '';
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 22px; height: 22px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 2px 6px rgba(0,0,0,.25);
+  transition: transform .22s var(--ease-spring);
+}
+.ios-toggle:checked {
+  background: var(--green);
+}
+.ios-toggle:checked::after {
+  transform: translateX(18px);
+}
+
+/* ── Floating action button glow ── */
+.fab {
+  box-shadow: 0 6px 20px rgba(0,122,255,.45), 0 2px 8px rgba(0,0,0,.15) !important;
+}
+.fab:hover {
+  box-shadow: 0 10px 32px rgba(0,122,255,.55), 0 4px 12px rgba(0,0,0,.18) !important;
+}
