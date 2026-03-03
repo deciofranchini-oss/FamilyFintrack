@@ -59,8 +59,9 @@ function renderAccounts(ft=''){
     if(bar){
       bar.style.display='flex';
       bar.innerHTML=state.groups.map(g=>{
-        return `<button class="group-bar-btn" onclick="scrollToGroup('${g.id}')">${g.emoji||'🗂️'} ${esc(g.name)}</button>`;
-      }).join('')+'<button class="group-bar-btn" onclick="scrollToGroup(\'__none__\')">📂 Sem grupo</button>';
+        const cnt=accs.filter(a=>a.group_id===g.id).length;
+        return `<button class="group-bar-btn" onclick="scrollToGroup('${g.id}')">${g.emoji||'🗂️'} ${esc(g.name)} <span class="group-bar-count">${cnt}</span></button>`;
+      }).join('')+'<button class="group-bar-btn" onclick="scrollToGroup(\'__none__\')">Sem grupo</button>';
     }
     renderAccountsGrouped(accs,grid);
   } else {
@@ -76,54 +77,26 @@ function renderAccountsFlat(accs,grid){
   grid.innerHTML=accs.map(a=>accountCardHTML(a)).join('');
 }
 
-function renderAccountsGrouped(accs, grid) {
-  const sections = [];
-  state.groups.forEach(g => {
-    const ga = accs.filter(a => a.group_id === g.id);
-    if (ga.length) sections.push({ g, accs: ga });
+function renderAccountsGrouped(accs,grid){
+  const sections=[];
+  state.groups.forEach(g=>{
+    const ga=accs.filter(a=>a.group_id===g.id);
+    if(ga.length)sections.push({g,accs:ga});
   });
-  const ungrouped = accs.filter(a => !a.group_id);
-
-  // Group quick-nav bar — just emoji + name, no redundant count
-  const bar = document.getElementById('accountsGroupBar');
-  if (bar) {
-    bar.style.display = 'flex';
-    bar.innerHTML = sections.map(({ g }) =>
-      `<button class="group-bar-btn" onclick="scrollToGroup('${g.id}')">${g.emoji || '🗂️'} ${esc(g.name)}</button>`
-    ).join('') + (ungrouped.length
-      ? `<button class="group-bar-btn" onclick="scrollToGroup('__none__')">📂 Sem grupo</button>`
-      : '');
-  }
-
-  if (!sections.length && !ungrouped.length) {
-    grid.innerHTML = '<div class="empty-state"><div class="es-icon">🗂️</div><p>Nenhum grupo criado ainda.</p></div>';
-    return;
-  }
-
-  const buildSection = ({ g, accs: ga, isUngrouped = false }) => {
-    const bal = ga.reduce((s, a) => s + a.balance, 0);
-    const color = g?.color || 'var(--accent)';
-    const id = isUngrouped ? '__none__' : g.id;
-    const emoji = isUngrouped ? '📂' : (g.emoji || '🗂️');
-    const title = isUngrouped ? 'Sem grupo' : esc(g.name);
-    const balClass = bal < 0 ? 'text-red' : 'text-accent';
-    const countLabel = `${ga.length} conta${ga.length !== 1 ? 's' : ''}`;
-
-    return `<div class="account-group-section" id="grp-${id}">
+  const ungrouped=accs.filter(a=>!a.group_id);
+  if(!sections.length){grid.innerHTML='<div class="empty-state"><div class="es-icon">🗂️</div><p>Nenhum grupo criado ainda.</p></div>';return;}
+  grid.innerHTML=sections.map(({g,accs:ga})=>{
+    const bal=ga.reduce((s,a)=>s+a.balance,0);
+    return `<div class="account-group-section" id="grp-${g.id}">
       <div class="account-group-header">
-        <span class="account-group-badge" style="background:${color}22;color:${color}">${emoji}</span>
-        <div class="account-group-info">
-          <span class="account-group-title">${title}</span>
-          <span class="account-group-meta">${countLabel}</span>
-        </div>
-        ${!isUngrouped ? `<span class="account-group-sum ${balClass}">${fmt(bal)}</span>` : ''}
+        <span class="account-group-emoji">${g.emoji||'🗂️'}</span>
+        <span class="account-group-name">${esc(g.name)}</span>
+        <span class="account-group-balance ${bal<0?'text-red':'text-accent'}">${fmt(bal)}</span>
+        <span class="account-group-count">${ga.length} conta${ga.length>1?'s':''}</span>
       </div>
-      <div class="account-grid" style="margin-top:0">${ga.map(a => accountCardHTML(a)).join('')}</div>
+      <div class="account-group-grid">${ga.map(a=>accountCardHTML(a)).join('')}</div>
     </div>`;
-  };
-
-  grid.innerHTML = sections.map(s => buildSection(s)).join('')
-    + (ungrouped.length ? buildSection({ g: null, accs: ungrouped, isUngrouped: true }) : '');
+  }).join('')+(ungrouped.length?`<div class="account-group-section" id="grp-__none__"><div class="account-group-header"><span class="account-group-emoji">📂</span><span class="account-group-name">Sem grupo</span></div><div class="account-group-grid">${ungrouped.map(a=>accountCardHTML(a)).join('')}</div></div>`:'');
 }
 
 function scrollToGroup(id){const el=document.getElementById('grp-'+id);if(el)el.scrollIntoView({behavior:'smooth',block:'start'});}
@@ -234,13 +207,11 @@ async function saveAccount(){
   if(state.currentPage==='dashboard')loadDashboard();
 }
 
-async function deleteAccount(id) {
-  const a = state.accounts.find(x => x.id === id);
-  const name = a ? esc(a.name) : 'esta conta';
-  if (!confirm(`Excluir "${name}"? Esta ação não pode ser desfeita.`)) return;
-  const { error } = await sb.from('accounts').update({ active: false }).eq('id', id);
-  if (error) { toast(error.message, 'error'); return; }
-  toast('Conta removida', 'success');
+async function deleteAccount(id){
+  if(!confirm('Excluir esta conta?'))return;
+  const{error}=await sb.from('accounts').update({active:false}).eq('id',id);
+  if(error){toast(error.message,'error');return;}
+  toast('Conta removida','success');
   await loadAccounts();
   populateSelects();
   renderAccounts(_accountsViewMode);
@@ -255,94 +226,37 @@ async function loadGroups(){
   }catch(e){state.groups=[];}
 }
 
-function renderGroupManager() {
-  const el = document.getElementById('groupList');
-  if (!el) return;
-  if (!state.groups.length) {
-    el.innerHTML = '<div class="empty-state-sm">Nenhum grupo criado ainda.</div>';
+function renderGroupManager(){
+  const el=document.getElementById('groupList');
+  if(!el) return;
+  if(!state.groups.length){
+    el.innerHTML='<div style="font-size:.85rem;color:var(--muted);text-align:center;padding:16px">Nenhum grupo criado ainda.</div>';
     return;
   }
-  el.innerHTML = state.groups.map(g => {
-    const count = state.accounts.filter(a => a.group_id === g.id).length;
-    const color = g.color || '#2a6049';
-    return `<div class="group-list-item">
-      <span class="group-list-emoji">${g.emoji || '🗂️'}</span>
-      <div class="group-list-info">
-        <span class="group-list-name">${esc(g.name)}</span>
-        <span class="group-list-dot" style="background:${color}"></span>
-        <span class="group-list-count">${count} conta${count !== 1 ? 's' : ''}</span>
+  el.innerHTML=state.groups.map(g=>{
+    const count=state.accounts.filter(a=>a.group_id===g.id).length;
+    const color=g.color||'#2a6049';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 10px;border:1px solid var(--border);border-radius:12px;background:var(--surface)">
+      <span style="font-size:1.35rem">${g.emoji||'🗂️'}</span>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(g.name)}</span>
+          <span style="width:10px;height:10px;border-radius:999px;background:${color};border:1px solid rgba(0,0,0,.08)"></span>
+        </div>
+        <div style="font-size:.75rem;color:var(--muted)">${count} conta${count!==1?'s':''}</div>
       </div>
-      <div class="group-list-actions">
-        <button class="btn btn-ghost btn-sm" onclick="openGroupModal('${g.id}')" title="Editar">✏️</button>
-        <button class="btn btn-ghost btn-sm" onclick="deleteGroup('${g.id}')" title="Excluir" style="color:var(--red)">🗑️</button>
-      </div>
+      <button class="btn btn-ghost btn-sm" onclick="openGroupModal('${g.id}')" title="Editar">✏️</button>
+      <button class="btn btn-ghost btn-sm" onclick="deleteGroup('${g.id}')" title="Excluir" style="color:var(--red)">🗑️</button>
     </div>`;
   }).join('');
 }
 
-async function deleteGroup(id) {
-  const g = state.groups.find(x => x.id === id);
-  const name = g ? `"${esc(g.name)}"` : 'este grupo';
-  const count = state.accounts.filter(a => a.group_id === id).length;
-  const msg = count
-    ? `Excluir o grupo ${name}? As ${count} conta(s) vinculadas ficarão sem grupo.`
-    : `Excluir o grupo ${name}?`;
-  if (!confirm(msg)) return;
-  await sb.from('accounts').update({ group_id: null }).eq('group_id', id);
-  const { error } = await sb.from('account_groups').delete().eq('id', id);
-  if (error) { toast(error.message, 'error'); return; }
-  toast('Grupo removido', 'success');
-  await loadGroups();
-  renderGroupManager();
-  await loadAccounts();
-  renderAccounts(_accountsViewMode);
-}
-
-function openGroupModal(id=''){
-  // Open the group management modal and optionally pre-fill for editing
-  document.getElementById('groupName').value='';
-  document.getElementById('groupEmoji').value='';
-  const colorEl=document.getElementById('groupColor');
-  if(colorEl)colorEl.value='#2a6049';
-  document.getElementById('groupEditId').value='';
-  if(id){
-    const g=state.groups.find(x=>x.id===id);
-    if(g){
-      document.getElementById('groupName').value=g.name||'';;
-      document.getElementById('groupEmoji').value=g.emoji||'';;
-      if(colorEl)colorEl.value=g.color||'#2a6049';
-      document.getElementById('groupEditId').value=id;
-    }
-  }
-  openModal('groupModal');
-  renderGroupManager();
-}
-
-function cancelGroupEdit(){
-  document.getElementById('groupName').value='';
-  document.getElementById('groupEmoji').value='';
-  const colorEl=document.getElementById('groupColor');
-  if(colorEl)colorEl.value='#2a6049';
-  document.getElementById('groupEditId').value='';
-}
-
-async function saveGroup(){
-  const id=document.getElementById('groupEditId').value;
-  const colorEl=document.getElementById('groupColor');
-  const data={
-    name:document.getElementById('groupName').value.trim(),
-    emoji:document.getElementById('groupEmoji').value||'🗂️',
-    color:colorEl?colorEl.value:'#2a6049',
-    updated_at:new Date().toISOString()
-  };
-  if(!data.name){toast('Informe o nome do grupo','error');return;}
-  if(!id)data.family_id=famId();
-  let err;
-  if(id){({error:err}=await sb.from('account_groups').update(data).eq('id',id));}
-  else{({error:err}=await sb.from('account_groups').insert(data));}
-  if(err){toast(err.message,'error');return;}
-  toast('Grupo salvo!','success');
-  cancelGroupEdit();
+async function deleteGroup(id){
+  if(!confirm('Excluir grupo? As contas não serão excluídas.'))return;
+  await sb.from('accounts').update({group_id:null}).eq('group_id',id);
+  const{error}=await sb.from('account_groups').delete().eq('id',id);
+  if(error){toast(error.message,'error');return;}
+  toast('Grupo removido','success');
   await loadGroups();
   renderGroupManager();
   await loadAccounts();

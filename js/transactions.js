@@ -381,8 +381,8 @@ function renderTransactionsGrouped(txs) {
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
           ${g.income ? `<span class="badge badge-green" style="font-size:.75rem">+${fmt(g.income)}</span>` : ''}
           ${g.expense ? `<span class="badge badge-red" style="font-size:.75rem">${fmt(g.expense)}</span>` : ''}
-          <span class="badge" style="font-size:.78rem;font-weight:700;background:${((parseFloat(acct.initial_balance)||0)+g.balance)>=0?'var(--green-lt)':'var(--red-lt)'};color:${((parseFloat(acct.initial_balance)||0)+g.balance)>=0?'var(--green)':'var(--red)'}">
-            Saldo: ${fmt((parseFloat(acct.initial_balance)||0) + g.balance, acct.currency || 'BRL')}
+          <span class="badge" style="font-size:.78rem;font-weight:700;background:${g.balance>=0?'var(--green-lt)':'var(--red-lt)'};color:${g.balance>=0?'var(--green)':'var(--red)'}">
+            ${( (parseFloat((state.accounts.find(a=>a.id===k)||{}).initial_balance)||0) + g.balance) >=0 ? '=':''} ${fmt((parseFloat((state.accounts.find(a=>a.id===k)||{}).initial_balance)||0) + g.balance), ((state.accounts.find(a=>a.id===k)||{}).currency || 'BRL'))}
           </span>
           <span style="font-size:.7rem;color:var(--muted)">${g.txs.length} lanç.</span>
         </div>
@@ -612,14 +612,19 @@ async function saveTransaction(){
   if(state.currentPage==='dashboard')loadDashboard();
 }
 async function duplicateTransaction(id) {
-  const orig = state.transactions?.find(t => t.id === id)
-    || await sb.from('transactions').select('*').eq('id', id).single().then(r => {
-      if (r.error || !r.data) { toast('Transação não encontrada', 'error'); return null; }
-      return r.data;
-    });
-  if (!orig) return;
-
-  const today = new Date().toISOString().slice(0, 10);
+  // Find original transaction
+  const orig = state.transactions?.find(t=>t.id===id);
+  if (!orig) {
+    // Fetch from DB if not in state
+    const {data, error} = await sb.from('transactions').select('*').eq('id', id).single();
+    if (error || !data) { toast('Transação não encontrada','error'); return; }
+    await _doDuplicateTx(data);
+  } else {
+    await _doDuplicateTx(orig);
+  }
+}
+async function _doDuplicateTx(orig) {
+  const today = new Date().toISOString().slice(0,10);
   const newTx = {
     account_id:             orig.account_id,
     description:            orig.description ? orig.description + ' (cópia)' : '(cópia)',
@@ -633,35 +638,29 @@ async function duplicateTransaction(id) {
     transfer_to_account_id: orig.transfer_to_account_id || null,
     family_id:              famId(),
   };
-  const { error } = await sb.from('transactions').insert(newTx);
+  const {data, error} = await sb.from('transactions').insert(newTx).select().single();
   if (error) { toast('Erro ao duplicar: ' + error.message, 'error'); return; }
-  toast(`✓ "${newTx.description}" duplicada`, 'success');
+  toast('Transação duplicada! (' + (newTx.description) + ')', 'success');
   if (state.currentPage === 'transactions') loadTransactions();
   if (state.currentPage === 'dashboard') loadDashboard();
 }
-
-async function deleteTransaction(id) {
-  const tx = state.transactions?.find(t => t.id === id);
-  const desc = tx?.description ? `"${tx.description}"` : 'esta transação';
-  if (!confirm(`Excluir ${desc}?`)) return;
-
-  // 1. Null out any scheduled_occurrence referencing this transaction
-  await sb.from('scheduled_occurrences').update({ transaction_id: null }).eq('transaction_id', id);
-
-  // 2. If this is a transfer, delete the paired leg too
-  const { data: linked } = await sb.from('transactions')
-    .select('linked_transfer_id, is_transfer').eq('id', id).single();
-  if (linked?.linked_transfer_id) {
-    await sb.from('scheduled_occurrences').update({ transaction_id: null }).eq('transaction_id', linked.linked_transfer_id);
-    await sb.from('transactions').delete().eq('id', linked.linked_transfer_id);
+async function deleteTransaction(id){
+  if(!confirm('Excluir transação?'))return;
+  // 1. Null out any scheduled_occurrence that references this transaction
+  //    (avoids FK / check-constraint violations when the row is deleted)
+  await sb.from('scheduled_occurrences').update({transaction_id:null}).eq('transaction_id',id);
+  // 2. If this is one leg of a transfer, delete the paired leg too
+  const {data:tx} = await sb.from('transactions').select('linked_transfer_id,is_transfer').eq('id',id).single();
+  if(tx?.linked_transfer_id) {
+    await sb.from('scheduled_occurrences').update({transaction_id:null}).eq('transaction_id',tx.linked_transfer_id);
+    await sb.from('transactions').delete().eq('id',tx.linked_transfer_id);
   }
-
   // 3. Delete the transaction itself
-  const { error } = await sb.from('transactions').delete().eq('id', id);
-  if (error) { toast(error.message, 'error'); return; }
-  toast('Transação excluída', 'success');
+  const{error}=await sb.from('transactions').delete().eq('id',id);
+  if(error){toast(error.message,'error');return;}
+  toast('Excluída','success');
   loadTransactions();
-  if (state.currentPage === 'dashboard') loadDashboard();
+  if(state.currentPage==='dashboard')loadDashboard();
 }
 
 /* ── Transaction Detail Drawer ── */
