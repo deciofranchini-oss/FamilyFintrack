@@ -84,19 +84,38 @@ function renderAccountsGrouped(accs,grid){
     if(ga.length)sections.push({g,accs:ga});
   });
   const ungrouped=accs.filter(a=>!a.group_id);
-  if(!sections.length){grid.innerHTML='<div class="empty-state"><div class="es-icon">🗂️</div><p>Nenhum grupo criado ainda.</p></div>';return;}
-  grid.innerHTML=sections.map(({g,accs:ga})=>{
+  if(!sections.length&&!ungrouped.length){grid.innerHTML='<div class="empty-state"><div class="es-icon">🗂️</div><p>Nenhum grupo criado ainda.</p></div>';return;}
+
+  const groupHTML=sections.map(({g,accs:ga})=>{
     const bal=ga.reduce((s,a)=>s+a.balance,0);
+    const color=g.color||'var(--accent)';
+    const balClass=bal<0?'text-red':'text-accent';
+    const countLabel=ga.length===1?'1 conta':`${ga.length} contas`;
     return `<div class="account-group-section" id="grp-${g.id}">
-      <div class="account-group-header">
+      <div class="account-group-header" style="border-left-color:${color}">
         <span class="account-group-emoji">${g.emoji||'🗂️'}</span>
         <span class="account-group-name">${esc(g.name)}</span>
-        <span class="account-group-balance ${bal<0?'text-red':'text-accent'}">${fmt(bal)}</span>
-        <span class="account-group-count">${ga.length} conta${ga.length>1?'s':''}</span>
+        <div class="account-group-meta">
+          <span class="account-group-count">${countLabel}</span>
+          <span class="account-group-balance ${balClass}">${fmt(bal)}</span>
+        </div>
       </div>
       <div class="account-group-grid">${ga.map(a=>accountCardHTML(a)).join('')}</div>
     </div>`;
-  }).join('')+(ungrouped.length?`<div class="account-group-section" id="grp-__none__"><div class="account-group-header"><span class="account-group-emoji">📂</span><span class="account-group-name">Sem grupo</span></div><div class="account-group-grid">${ungrouped.map(a=>accountCardHTML(a)).join('')}</div></div>`:'');
+  }).join('');
+
+  const ungroupedHTML=ungrouped.length?`<div class="account-group-section" id="grp-__none__">
+    <div class="account-group-header" style="border-left-color:var(--border2)">
+      <span class="account-group-emoji">📂</span>
+      <span class="account-group-name">Sem grupo</span>
+      <div class="account-group-meta">
+        <span class="account-group-count">${ungrouped.length===1?'1 conta':`${ungrouped.length} contas`}</span>
+      </div>
+    </div>
+    <div class="account-group-grid">${ungrouped.map(a=>accountCardHTML(a)).join('')}</div>
+  </div>`:'';
+
+  grid.innerHTML=groupHTML+ungroupedHTML;
 }
 
 function scrollToGroup(id){const el=document.getElementById('grp-'+id);if(el)el.scrollIntoView({behavior:'smooth',block:'start'});}
