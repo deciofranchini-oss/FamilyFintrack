@@ -841,34 +841,6 @@ function _deepMerge(target, source) {
   return target;
 }
 
-function getActiveChartPalette(){
-  const def=['#2a6049','#1e5ba8','#b45309','#c0392b','#7c3aed','#2a7a4a','#3d7a5e','#64748b'];
-  try{
-    const raw = (typeof getAppSetting==='function' ? getAppSetting('chart_palette', null) : null) || localStorage.getItem('chart_palette');
-    const arr = raw ? (typeof raw==='string' ? JSON.parse(raw) : raw) : null;
-    if(Array.isArray(arr) && arr.length) return arr.map(c=>String(c||'').trim()).filter(Boolean);
-  }catch(e){}
-  return def;
-}
-
-function applyPaletteToDatasets(type, datasets){
-  const pal=getActiveChartPalette();
-  datasets.forEach((ds, di)=>{
-    if(type==='bar' || type==='line'){
-      if(!ds.borderColor) ds.borderColor = pal[di % pal.length];
-      if(!ds.backgroundColor) ds.backgroundColor = pal[di % pal.length];
-    }else if(type==='doughnut' || type==='pie'){
-      if(!ds.backgroundColor || !Array.isArray(ds.backgroundColor)){
-        // if data points: spread palette
-        const n = (ds.data||[]).length;
-        ds.backgroundColor = Array.from({length:n}, (_,i)=>pal[i%pal.length]);
-      }
-      if(!ds.borderColor) ds.borderColor = '#fff';
-    }
-  });
-  return datasets;
-}
-
 function renderChart(id, type, labels, datasets, extraOptions={}) {
   if(state.chartInstances[id]) state.chartInstances[id].destroy();
   const ctx = document.getElementById(id)?.getContext('2d');
@@ -876,8 +848,6 @@ function renderChart(id, type, labels, datasets, extraOptions={}) {
 
   const isDoughnut = type === 'doughnut' || type === 'pie';
   const isBar = type === 'bar';
-
-  datasets = applyPaletteToDatasets(type, datasets);
 
   state.chartInstances[id] = new Chart(ctx, {
     type,
