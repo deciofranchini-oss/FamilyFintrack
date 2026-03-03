@@ -1236,3 +1236,7 @@ canvas { cursor: default; }
   font-size:.75rem;font-weight:700;color:#fff;flex-shrink:0;
 }
 .topbar-user-name { font-size:.78rem;font-weight:600;color:var(--text2); }
+
+/* Pending transactions highlight */
+.tx-pending { background: var(--yellow-lt,#fef9c3) !important; }
+.tx-pending td { border-bottom-color: #fcd34d; }
