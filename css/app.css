@@ -33,3 +33,49 @@ body{font-family:var(--font-sans);background:var(--bg);color:var(--text);height:
 #topSchoolBtn{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;color:inherit}
 
 .tx-attach{margin-left:6px;opacity:.9}
+
+
+/* ─────────────────────────────────────────────────────────────
+   Transactions responsive layout (no horizontal scroll)
+   ───────────────────────────────────────────────────────────── */
+.tx-mobile-cell{ padding: 10px 12px !important; }
+.tx-mobile-card{
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 10px 12px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.04);
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.tx-mobile-top{ display:flex; justify-content:space-between; align-items:baseline; gap:10px; }
+.tx-mobile-date{ font-weight:700; font-size:.9rem; color: var(--text); }
+.tx-time{ font-weight:600; color: var(--muted); font-size:.78rem; }
+.tx-mobile-amt{ font-weight:800; font-size:1.0rem; }
+.tx-mobile-amt.pos{ color: var(--green); }
+.tx-mobile-amt.neg{ color: var(--red); }
+.tx-mobile-mid{ display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
+.tx-mobile-desc{ font-size:.9rem; color: var(--text2); flex:1; line-height:1.25; }
+.tx-mobile-badges{ flex:0 0 auto; }
+.tx-mobile-meta{ display:flex; flex-wrap:wrap; gap:6px; }
+.tx-mobile-chip{
+  font-size:.78rem;
+  color: var(--muted);
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  border-radius: 999px;
+  max-width: 100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+@media (max-width: 720px){
+  /* hide header to avoid sideways scroll */
+  #txTable thead{ display:none; }
+  #txTable{ width:100%; table-layout:fixed; }
+  #txTable td{ border-bottom: none; }
+  /* make rows tap-friendly */
+  .tx-row-clickable{ cursor:pointer; }
+}
