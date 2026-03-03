@@ -201,23 +201,23 @@
   <div class="sidebar-nav">
     <div class="nav-section">
       <div class="nav-label">Principal</div>
-      <button class="nav-item active" onclick="navigate('dashboard')"><span class="ni-icon">📊</span>Dashboard</button>
-      <button class="nav-item" onclick="navigate('transactions')"><span class="ni-icon">↕</span>Transações</button>
-      <button class="nav-item" onclick="navigate('accounts')"><span class="ni-icon">🏦</span>Contas</button>
+      <button class="nav-item active" onclick="navigate('dashboard')" id=\"dashboardNav\"><span class="ni-icon">📊</span>Dashboard</button>
+      <button class="nav-item" onclick="navigate('transactions')" id=\"transactionsNav\"><span class="ni-icon">↕</span>Transações</button>
+      <button class="nav-item" onclick="navigate('accounts')" id=\"accountsNav\"><span class="ni-icon">🏦</span>Contas</button>
     </div>
     <div class="nav-section">
       <div class="nav-label">Análise</div>
-      <button class="nav-item" onclick="navigate('reports')"><span class="ni-icon">📈</span>Relatórios</button>
-      <button class="nav-item" onclick="navigate('budgets')"><span class="ni-icon">🎯</span>Orçamentos</button>
+      <button class="nav-item" onclick="navigate('reports')" id=\"reportsNav\"><span class="ni-icon">📈</span>Relatórios</button>
+      <button class="nav-item" onclick="navigate('budgets')" id=\"budgetsNav\"><span class="ni-icon">🎯</span>Orçamentos</button>
     </div>
     <div class="nav-section">
       <div class="nav-label">Planejamento</div>
-      <button class="nav-item" onclick="navigate('scheduled')"><span class="ni-icon">📅</span>Programados</button>
+      <button class="nav-item" onclick="navigate('scheduled')" id=\"scheduledNav\"><span class="ni-icon">📅</span>Programados</button>
     </div>
     <div class="nav-section">
       <div class="nav-label">Cadastros</div>
-      <button class="nav-item" onclick="navigate('categories')"><span class="ni-icon">🏷</span>Categorias</button>
-      <button class="nav-item" onclick="navigate('payees')"><span class="ni-icon">👥</span>Beneficiários</button>
+      <button class="nav-item" onclick="navigate('categories')" id=\"categoriesNav\"><span class="ni-icon">🏷</span>Categorias</button>
+      <button class="nav-item" onclick="navigate('payees')" id=\"payeesNav\"><span class="ni-icon">👥</span>Beneficiários</button>
     </div>
     <div class="nav-section">
       <div class="nav-label">Externo</div>
@@ -911,6 +911,27 @@
           </div>
         </div>
       </div>
+      <!-- Menu visibility (admin configurable) -->
+      <div class="settings-section" id="menuVisibilitySection" style="display:none">
+        <div class="settings-card">
+          <div class="settings-row" style="align-items:flex-start">
+            <div class="settings-row-icon" style="background:var(--accent-lt)">📋</div>
+            <div class="settings-row-body">
+              <div class="settings-row-title">Itens do menu</div>
+              <div class="settings-row-subtitle">Escolha quais páginas aparecem no menu lateral (configuração global).</div>
+
+              <div id="menuVisibilityForm" style="margin-top:10px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px"></div>
+
+              <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+                <button class="btn btn-primary" onclick="saveMenuVisibility()">Salvar</button>
+                <button class="btn" onclick="resetMenuVisibility()">Restaurar padrão</button>
+              </div>
+              <div id="menuVisibilityHint" class="text-muted" style="margin-top:8px;font-size:.85rem"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
 
       <!-- Logo -->
       
