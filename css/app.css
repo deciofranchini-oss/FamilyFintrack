@@ -1317,3 +1317,25 @@ body.tx-compact .tx-table .badge{
 /* Topbar icon buttons (Import/Audit/Settings) */
 .topbar-icon-btn{background:none;border:none;cursor:pointer;padding:6px;border-radius:8px;color:var(--muted);display:flex;align-items:center;justify-content:center;transition:background .15s,color .15s;font-size:1rem;}
 .topbar-icon-btn:hover{color:var(--text);background:var(--bg2);}
+
+
+/* ─────────────────────────────────────────────────────────────
+   Compact mode toggle (settings + topbar)
+   ───────────────────────────────────────────────────────────── */
+#txCompactKnob{ position:absolute; cursor:pointer; inset:0; background:#ccc; border-radius:100px; transition:.25s; }
+#txCompactKnob::before{
+  content:'';
+  position:absolute;
+  left:2px;
+  top:2px;
+  width:18px;
+  height:18px;
+  background:#fff;
+  border-radius:999px;
+  transition:transform .25s ease;
+  transform:translateX(0);
+  box-shadow:0 1px 2px rgba(0,0,0,.25);
+}
+body.tx-compact #txCompactKnob{ background:var(--accent) !important; }
+body.tx-compact #txCompactKnob::before{ transform:translateX(20px); }
+#compactToggleBtn.is-active{ color:var(--accent) !important; }
