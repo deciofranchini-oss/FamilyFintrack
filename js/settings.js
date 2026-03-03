@@ -11,6 +11,10 @@ async function loadAppSettings() {
     const logo = _appSettingsCache['app_logo_url'] || localStorage.getItem('app_logo_url');
     if (logo && typeof setAppLogo === 'function') setAppLogo(logo);
 
+    // Apply menu visibility (if configured)
+    try { applyMenuVisibility(_getMenuVisibilityFromCache()); } catch {}
+
+
     // Hydrate EmailJS config
     EMAILJS_CONFIG.serviceId  = _appSettingsCache['ej_service']  || localStorage.getItem('ej_service')  || '';
     EMAILJS_CONFIG.templateId = _appSettingsCache['ej_template'] || localStorage.getItem('ej_template') || '';
@@ -555,4 +559,114 @@ async function saveTxCompactPreference(){
     if(state.currentPage==='transactions') renderTransactions();
     if(state.currentPage==='dashboard') loadDashboardRecent();
   }catch(e){}
+}
+
+
+// ── Menu Visibility (admin configurable) ───────────────────────────────
+const DEFAULT_MENU_VISIBILITY = {
+  dashboard: true,
+  transactions: true,
+  accounts: true,
+  reports: true,
+  budgets: true,
+  scheduled: true,
+  categories: true,
+  payees: true,
+  import: true,
+  audit: true,
+  settings: true
+};
+
+function _getMenuVisibilityFromCache() {
+  // app_settings key
+  let v = (_appSettingsCache && _appSettingsCache['menu_visibility']) || null;
+  if (!v) {
+    // fallback localStorage
+    const raw = localStorage.getItem('menu_visibility');
+    if (raw) { try { v = JSON.parse(raw); } catch {} }
+  }
+  if (!v || typeof v !== 'object') v = {};
+  return { ...DEFAULT_MENU_VISIBILITY, ...v };
+}
+
+function applyMenuVisibility(vis) {
+  if (!vis || typeof vis !== 'object') vis = _getMenuVisibilityFromCache();
+  const map = {
+    dashboard: 'dashboardNav',
+    transactions: 'transactionsNav',
+    accounts: 'accountsNav',
+    reports: 'reportsNav',
+    budgets: 'budgetsNav',
+    scheduled: 'scheduledNav',
+    categories: 'categoriesNav',
+    payees: 'payeesNav',
+    import: 'importNav',
+    audit: 'auditNav',
+    settings: 'settingsNav',
+  };
+  Object.keys(map).forEach(key => {
+    const el = document.getElementById(map[key]);
+    if (!el) return;
+    // Do not show admin-only items to non-admin even if enabled
+    if ((key === 'audit' || key === 'settings') && currentUser?.role !== 'admin') {
+      el.style.display = 'none';
+      return;
+    }
+    el.style.display = vis[key] ? '' : 'none';
+  });
+}
+
+function _renderMenuVisibilityForm() {
+  const wrap = document.getElementById('menuVisibilityForm');
+  const hint = document.getElementById('menuVisibilityHint');
+  if (!wrap) return;
+  const vis = _getMenuVisibilityFromCache();
+
+  const items = [
+    ['dashboard',   'Dashboard'],
+    ['transactions','Transações'],
+    ['accounts',    'Contas'],
+    ['reports',     'Relatórios'],
+    ['budgets',     'Orçamentos'],
+    ['scheduled',   'Programados'],
+    ['categories',  'Categorias'],
+    ['payees',      'Beneficiários'],
+    ['import',      'Importar'],
+    ['audit',       'Auditoria (admin)'],
+    ['settings',    'Configurações (admin)'],
+  ];
+
+  wrap.innerHTML = items.map(([key,label]) => {
+    const checked = vis[key] ? 'checked' : '';
+    const disabled = (key==='audit' || key==='settings') ? '' : '';
+    return `<label style="display:flex;gap:8px;align-items:center;padding:8px 10px;border:1px solid var(--border);border-radius:12px;background:var(--bg2)">
+      <input type="checkbox" id="mv_${key}" ${checked} ${disabled} style="transform:scale(1.1)">
+      <span style="font-size:.95rem">${label}</span>
+    </label>`;
+  }).join('');
+
+  if (hint) hint.textContent = 'Dica: se você ocultar uma página, ainda poderá acessá-la via URL/atalhos internos, mas ela não aparece no menu.';
+}
+
+async function saveMenuVisibility() {
+  const vis = {};
+  Object.keys(DEFAULT_MENU_VISIBILITY).forEach(k => {
+    const cb = document.getElementById('mv_' + k);
+    if (cb) vis[k] = !!cb.checked;
+  });
+  await saveAppSetting('menu_visibility', vis);
+  // refresh cache and apply
+  if (!_appSettingsCache) _appSettingsCache = {};
+  _appSettingsCache['menu_visibility'] = vis;
+  applyMenuVisibility(vis);
+  toast('Menu atualizado ✓', 'success');
+}
+
+async function resetMenuVisibility() {
+  await saveAppSetting('menu_visibility', DEFAULT_MENU_VISIBILITY);
+  if (!_appSettingsCache) _appSettingsCache = {};
+  _appSettingsCache['menu_visibility'] = DEFAULT_MENU_VISIBILITY;
+  _renderMenuVisibilityForm();
+  applyMenuVisibility(DEFAULT_MENU_VISIBILITY);
+  toast('Menu restaurado ✓', 'success');
 }

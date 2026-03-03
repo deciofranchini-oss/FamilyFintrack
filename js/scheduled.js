@@ -122,9 +122,20 @@ function scStatusLabel(sc) {
 // ── Load & Render ──────────────────────────────────────
 async function loadScheduled() {
   try {
-    const { data, error } = await famQ(sb.from('scheduled_transactions').select('*, accounts!scheduled_transactions_account_id_fkey(name,currency), payees(name), categories(name,color), occurrences:scheduled_occurrences(id,scheduled_date,actual_date,amount,memo,transaction_id)')).order('start_date');
+    const { data, error } = await famQ(sb.from('scheduled_transactions').select('*, accounts!scheduled_transactions_account_id_fkey(name,currency), payees(name), categories(name,color), occurrences:scheduled_occurrences(id,scheduled_date,actual_date,amount,memo,transaction_id)'));
     if(error) throw error;
     state.scheduled = data || [];
+
+// Sort by next scheduled occurrence (closest first)
+state.scheduled.sort((a,b) => {
+  const da = getNextOccurrence(a) || '9999-12-31';
+  const db = getNextOccurrence(b) || '9999-12-31';
+  if (da < db) return -1;
+  if (da > db) return 1;
+  // tie-breaker: description
+  return (a.description||'').localeCompare(b.description||'');
+});
+
   } catch(e) {
     // Table might not exist yet
     if(e.message?.includes('does not exist') || e.code === '42P01') {
