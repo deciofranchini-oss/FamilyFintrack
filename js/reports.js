@@ -72,41 +72,6 @@ function loadCurrentReport() {
 }
 
 /* ── Fetch filtered transactions ── */
-/* ── Fallback local report data (when Supabase query is not available) ── */
-function _localRptFilter({from,to,accId,typeV,catId,payId}){
-  const fromD = new Date(from+'T00:00');
-  const toD   = new Date(to+'T23:59');
-  const accMap = Object.fromEntries((state.accounts||[]).map(a=>[a.id,a]));
-  const catMap = Object.fromEntries((state.categories||[]).map(c=>[c.id,c]));
-  const payMap = Object.fromEntries((state.payees||[]).map(p=>[p.id,p]));
-  const txs = (state.transactions||[]).slice();
-  const out = [];
-  for(const t of txs){
-    if(!t || !t.date) continue;
-    const d = new Date(String(t.date).slice(0,10)+'T12:00');
-    if(d < fromD || d > toD) continue;
-    if(accId && t.account_id !== accId) continue;
-    if(catId && t.category_id !== catId) continue;
-    if(payId && t.payee_id !== payId) continue;
-    const amt = Number(t.amount||0);
-    if(typeV==='expense' && !(amt<0)) continue;
-    if(typeV==='income'  && !(amt>0)) continue;
-    // attach relationship-like objects used by reports.js
-    const acc = accMap[t.account_id] || null;
-    const cat = catMap[t.category_id] || null;
-    const pay = payMap[t.payee_id] || null;
-    out.push({
-      ...t,
-      accounts: acc ? { name: acc.name, color: acc.color, currency: acc.currency } : t.accounts,
-      categories: cat ? { name: cat.name, color: cat.color, type: cat.type, icon: cat.icon } : t.categories,
-      payees: pay ? { name: pay.name } : t.payees
-    });
-  }
-  // sort by date desc
-  out.sort((a,b)=>String(b.date).localeCompare(String(a.date)));
-  return out.filter(t=>!t.is_transfer);
-}
-
 async function fetchRptTransactions() {
   const {from, to} = getRptDateRange();
   const accId  = document.getElementById('rptAccount')?.value   || '';
@@ -114,13 +79,8 @@ async function fetchRptTransactions() {
   const catId  = document.getElementById('rptCategory')?.value  || '';
   const payId  = document.getElementById('rptPayee')?.value     || '';
 
-  // If Supabase is not ready (or user is offline), compute from local state.
-  if(!sb || typeof sb.from !== 'function') {
-    return _localRptFilter({from,to,accId,typeV,catId,payId});
-  }
-
   let q = sb.from('transactions')
-    .select('*, accounts!transactions_account_id_fkey(name,color,currency), categories(name,color,type,icon), payees(name)')
+    .select('*, accounts!transactions_account_id_fkey(name,color,currency), categories(name,color,type), payees(name)')
     .gte('date',from).lte('date',to)
     .order('date',{ascending:false});
   if(accId) q = q.eq('account_id', accId);
@@ -130,11 +90,7 @@ async function fetchRptTransactions() {
   if(typeV==='income')  q = q.gt('amount',0);
 
   const {data, error} = await q;
-  if(error) {
-    // Fallback to local state if query fails (RLS/offline/config)
-    console.warn('Reports query failed, using local state:', error);
-    return _localRptFilter({from,to,accId,typeV,catId,payId});
-  }
+  if(error) { toast(error.message,'error'); return []; }
   return (data||[]).filter(t=>!t.is_transfer);
 }
 

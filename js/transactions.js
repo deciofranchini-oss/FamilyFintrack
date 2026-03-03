@@ -288,37 +288,16 @@ function populateTxMonthFilter() {
   if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;
 }
 function sortTx(field){if(state.txSortField===field)state.txSortAsc=!state.txSortAsc;else{state.txSortField=field;state.txSortAsc=false;}loadTransactions();}
-function txRow(t){
-  const isPending = (t.status||'confirmed')==='pending';
-  const dateStr = fmtDate(t.date);
-  const payee = t.payees?.name || t.payee_name || '';
-  const cat = t.categories?.name || t.category_name || '';
-  const catIcon = t.categories?.icon || '';
-  const amount = Number(t.amount||0);
-  const isTransfer = !!(t.is_transfer || t.transfer_to_account_id || (t.categories && String(t.categories.type||'').toLowerCase().includes('transfer')) || String(t.transfer_kind||'').length);
-  const amtClass = isTransfer ? 'transfer' : (amount < 0 ? 'neg' : 'pos');
-  const attach = (t.attachment_url || t.attachment_name) ? `<span class="tx-clip" title="Possui anexo">📎</span>` : '';
-  const desc = esc(t.description || '—');
-  const payeeHtml = payee ? `<div class="tx-payee">${esc(payee)}</div>` : '';
-  return `
-    <tr class="tx-row ${isPending?'tx-pending':''}" data-id="${esc(t.id)}">
-      <td class="tx-date">${dateStr}</td>
-      <td class="tx-desc-cell">
-        <div class="tx-desc-line">
-          ${attach}
-          <div class="tx-desc-wrap">
-            <div class="tx-desc">${desc}</div>
-            ${payeeHtml}
-          </div>
-        </div>
-      </td>
-      <td class="tx-cat-cell">${catIcon?`<span class="tx-cat-ico">${catIcon}</span>`:''}<span class="tx-cat-name">${esc(cat)}</span></td>
-      <td class="tx-amt-cell"><span class="tx-amount ${amtClass}">${fmt(amount)}</span></td>
-      <td class="tx-act-cell">
-        <button class="tx-action-btn" title="Abrir" onclick="openTxDetail('${esc(t.id)}')">⋯</button>
-      </td>
-    </tr>
-  `;
+function txRow(t, showAccount=true) {
+  return `<tr class="tx-row-clickable ${(t.status||'confirmed')==='pending' ? 'tx-pending' : ''}" data-tx-id="${t.id}" onclick="openTxDetail('${t.id}')" style="cursor:pointer" onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background=''">
+    <td class="text-muted" style="white-space:nowrap">${fmtDate(t.date)}${(t.status||'confirmed')==='pending' ? ' <span class="badge" style="margin-left:6px;background:var(--yellow-lt,#fef9c3);color:#92400e;border:1px solid #fcd34d">Pendente</span>' : ''}</td>
+    ${showAccount ? `<td><span class="badge badge-muted">${esc(t.accounts?.name||'—')}</span></td>` : ''}
+    <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.description||'—')}</td>
+    <td class="text-muted">${esc(t.payees?.name||'—')}</td>
+    <td>${t.categories?`<span class="badge" style="background:${t.categories.color}18;color:${t.categories.color};border:1px solid ${t.categories.color}30">${esc(t.categories.name)}</span>`:'—'}</td>
+    <td class="${t.amount>=0?'amount-pos':'amount-neg'}" style="white-space:nowrap">${fmt(t.amount)}</td>
+    <td onclick="event.stopPropagation()"><div style="display:flex;gap:4px"><button class="btn-icon" title="Editar" onclick="editTransaction('${t.id}')">✏️</button><button class="btn-icon" title="Duplicar" onclick="duplicateTransaction('${t.id}')">📋</button><button class="btn-icon" title="Excluir" onclick="deleteTransaction('${t.id}')">🗑️</button></div></td>
+  </tr>`;
 }
 
 function setTxView(v) {
@@ -328,33 +307,6 @@ function setTxView(v) {
   document.getElementById('txFlatCard').style.display = v==='flat' ? '' : 'none';
   document.getElementById('txGroupContainer').style.display = v==='group' ? '' : 'none';
   renderTransactions();
-}
-
-
-// ── Last category suggestion per Payee (expense/income) ───────────────
-function getPayeeLastCategoryMap(){
-  try{ return JSON.parse(localStorage.getItem('payee_last_category')||'{}') || {}; }catch(e){ return {}; }
-}
-function setPayeeLastCategory(payeeId, kind, categoryId){
-  if(!payeeId || !categoryId) return;
-  const map = getPayeeLastCategoryMap();
-  map[payeeId] = map[payeeId] || {};
-  map[payeeId][kind] = categoryId;
-  try{ localStorage.setItem('payee_last_category', JSON.stringify(map)); }catch(e){}
-}
-function suggestCategoryForPayee(payeeId, kind){
-  const map = getPayeeLastCategoryMap();
-  const catId = map?.[payeeId]?.[kind];
-  if(!catId) return null;
-  const sel = document.getElementById('txCategorySelect') || document.getElementById('categorySelect') || document.getElementById('txCategory');
-  if(sel && sel.value !== catId){
-    // Only auto-set if user hasn't chosen anything yet or it's empty/default
-    if(!sel.value || sel.value===''){
-      sel.value = catId;
-      try{ sel.dispatchEvent(new Event('change')); }catch(e){}
-    }
-  }
-  return catId || null;
 }
 
 function renderTransactions(){
