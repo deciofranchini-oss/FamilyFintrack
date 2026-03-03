@@ -1397,3 +1397,25 @@ body{ font-family: var(--sf); text-rendering: optimizeLegibility; -webkit-font-s
   transform: translateY(0) scale(1);
   opacity: 1;
 }
+
+
+/* Mobile tx columns fix: keep Category and Value columns, stack Payee under Description */
+.tx-desc-line{ display:flex; align-items:flex-start; gap:6px; }
+.tx-desc-wrap{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+.tx-clip{ font-size:.85rem; margin-top:2px; }
+.tx-cat-ico{ margin-right:4px; }
+.tx-amount.pos{ color: var(--green); }
+.tx-amount.neg{ color: var(--red); }
+.tx-amount.transfer{ color: #1e5ba8; } /* blue for transfers */
+
+@media (max-width: 720px){
+  .tx-table, .tx-table td, .tx-table th{ font-size: 0.82rem; }
+  .tx-date{ width:74px; white-space:nowrap; color:var(--muted); }
+  .tx-cat-cell{ width:92px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .tx-amt-cell{ width:92px; text-align:right; }
+  .tx-act-cell{ width:36px; text-align:right; }
+  .tx-desc{ font-weight:650; white-space:normal; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+  .tx-payee{ font-size:.76rem; color:var(--muted); white-space:normal; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical; }
+  .tx-amount{ font-variant-numeric: tabular-nums; text-align:right; display:inline-block; width:100%; }
+  .tx-desc-cell{ min-width:0; }
+}
