@@ -1,7 +1,3 @@
-function lastDayOfMonth(year, month){
-  return new Date(year, month, 0).getDate();
-}
-
 let rptState = { view:'regular', txData:[] };
 let rptTxSortField = 'date', rptTxSortAsc = false;
 
@@ -24,7 +20,7 @@ function getRptDateRange() {
     to   = new Date(now.getFullYear(),q*3+3,0).toISOString().slice(0,10);
   } else if(p === 'year') {
     from = `${now.getFullYear()}-01-01`;
-    to   = `${now.getFullYear()}-12-${String(lastDayOfMonth(y, m)).padStart(2,'0')}`;
+    to   = `${now.getFullYear()}-12-31`;
   } else { // last12
     const d = new Date(); d.setMonth(d.getMonth()-11); d.setDate(1);
     from = d.toISOString().slice(0,10);
@@ -76,7 +72,7 @@ function loadCurrentReport() {
 }
 
 /* ── Fetch filtered transactions ── */
-async async function fetchRptTransactions() {
+async function fetchRptTransactions() {
   const {from, to} = getRptDateRange();
   const accId  = document.getElementById('rptAccount')?.value   || '';
   const typeV  = document.getElementById('rptType')?.value      || '';
@@ -120,13 +116,7 @@ function _rptTopCompositionLines(catMap, total) {
   return lines;
 }
 
-async async function loadReports() {
-  if(!window.Chart){
-    const el=document.getElementById('reportsError');
-    if(el) el.textContent='Chart.js não carregou. Verifique conexão/cache.';
-    return;
-  }
-
+async function loadReports() {
   const {from, to} = getRptDateRange();
   const txs  = await fetchRptTransactions();
   rptState.txData = txs;
@@ -150,57 +140,7 @@ async async function loadReports() {
 
   const FB = ['#2a6049','#1e5ba8','#b45309','#c0392b','#7c3aed','#2a7a4a','#d97706','#6b7280','#3d7a5e','#4e8f73'];
 
-function _isStr(v){ return typeof v === 'string'; }
-function _safeColorAny(v, fb){
-  const fallback = fb || '#6b7280';
-  if(_isStr(v) && v.trim()) return v;
-  if(v && typeof v === 'number') return fallback;
-  if(v && typeof v === 'object'){
-    const cand = v.value || v.hex || v.color;
-    if(_isStr(cand) && cand.trim()) return cand;
-  }
-  return fallback;
-}
-function sanitizeDatasets(data){
-  try{
-    if(!data || !Array.isArray(data.datasets)) return data;
-    data.datasets.forEach((ds, i)=>{
-      if(!ds || typeof ds !== 'object') return;
-      const fb = (Array.isArray(FB) && FB.length) ? FB[i%FB.length] : '#6b7280';
-      const keys = ['backgroundColor','borderColor','hoverBackgroundColor','hoverBorderColor','pointBackgroundColor','pointBorderColor','pointHoverBackgroundColor','pointHoverBorderColor'];
-      keys.forEach(k=>{
-        const v = ds[k];
-        if(Array.isArray(v)) ds[k] = v.map(x=>_safeColorAny(x, fb));
-        else if(v !== undefined) ds[k] = _safeColorAny(v, fb);
-      });
-    });
-  }catch(e){}
-  return data;
-}
-function plainClone(obj){
-  try{ return JSON.parse(JSON.stringify(obj)); }catch(e){ return obj; }
-}
-function sanitizeChartConfig(type, data, options){
-  const cleanData = sanitizeDatasets(data);
-  const cleanOptions = plainClone(options || {});
-  return { type, data: cleanData, options: cleanOptions };
-}
-
-
-
-  
-function safeColor(c, fallback){
-  const fb = fallback || '#6b7280';
-  if(typeof c === 'string' && c.trim()) return c;
-  // Allow {value:'#fff'} or {hex:'#fff'} shapes
-  if(c && typeof c === 'object'){
-    const v = c.value || c.hex || c.color;
-    if(typeof v === 'string' && v.trim()) return v;
-  }
-  return fb;
-}
-
-/* Despesas por categoria */
+  /* Despesas por categoria */
   const expMap = {};
   exps.forEach(t=>{
     const n=t.categories?.name||'Sem categoria', c=t.categories?.color||'#94a3b8';
@@ -211,7 +151,7 @@ function safeColor(c, fallback){
   if(expEntries.length)
     renderChart('reportCatChart','doughnut',expEntries.map(e=>e[0]),
       [{data:expEntries.map(e=>e[1].total),
-        backgroundColor: expEntries.map((e,i)=>safeColor(e[1].color, FB[i%FB.length])),
+        backgroundColor:expEntries.map((e,i)=>e[1].color||FB[i%FB.length]),
         borderWidth:2,borderColor:'#fff',hoverOffset:8}]);
 
   /* Receitas por categoria */
@@ -225,7 +165,7 @@ function safeColor(c, fallback){
   if(incEntries.length)
     renderChart('reportIncomeChart','doughnut',incEntries.map(e=>e[0]),
       [{data:incEntries.map(e=>e[1].total),
-        backgroundColor: incEntries.map((e,i)=>safeColor(e[1].color, FB[i%FB.length])),
+        backgroundColor:incEntries.map((e,i)=>e[1].color||FB[i%FB.length]),
         borderWidth:2,borderColor:'#fff',hoverOffset:8}]);
 
   /* Por conta */
@@ -909,8 +849,7 @@ function renderChart(id, type, labels, datasets, extraOptions={}) {
   const isDoughnut = type === 'doughnut' || type === 'pie';
   const isBar = type === 'bar';
 
-  try{
-    state.chartInstances[id] = new Chart(ctx, {
+  state.chartInstances[id] = new Chart(ctx, {
     type,
     data: { labels, datasets },
     options: {
@@ -1003,12 +942,6 @@ function renderChart(id, type, labels, datasets, extraOptions={}) {
       /* merged options */
     }
   });
-  }catch(e){
-    console.error('Report chart render error', e);
-    const el=document.getElementById('reportsError');
-    if(el) el.textContent = 'Erro ao renderizar gráficos: '+(e && e.message ? e.message : e);
-    return;
-  }
   // Merge extra options without losing defaults
   if(extraOptions && Object.keys(extraOptions).length) {
     state.chartInstances[id].options = _deepMerge(state.chartInstances[id].options || {}, extraOptions);
