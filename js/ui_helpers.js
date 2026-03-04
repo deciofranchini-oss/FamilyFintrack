@@ -1,4 +1,4 @@
-const ICON_META = {
+var ICON_META = window.ICON_META || {
   // Brazilian banks
   'itau':       {label:'Itaú',        color:'#FF6600', type:'bank'},
   'inter':      {label:'Inter',       color:'#FF7A00', type:'bank'},
@@ -39,6 +39,8 @@ const ICON_META = {
   'sams':       {label:"Sam's",       color:'#0067A0', type:'card'},
   'porto':      {label:'Porto',       color:'#005B8E', type:'card'},
 };
+window.ICON_META = ICON_META;
+
 
 // Render icon from stored key into an element
 function renderIconEl(iconKey, color, size=28) {

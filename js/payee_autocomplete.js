@@ -1,4 +1,5 @@
-const payeeAC = {
+var payeeAC = {
+window.payeeAC = payeeAC;
   focusIdx: -1,
   blurTimer: null,
   selectedId: null,

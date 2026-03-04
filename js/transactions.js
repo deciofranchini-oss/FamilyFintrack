@@ -309,6 +309,33 @@ function setTxView(v) {
   renderTransactions();
 }
 
+
+// ── Last category suggestion per Payee (expense/income) ───────────────
+function getPayeeLastCategoryMap(){
+  try{ return JSON.parse(localStorage.getItem('payee_last_category')||'{}') || {}; }catch(e){ return {}; }
+}
+function setPayeeLastCategory(payeeId, kind, categoryId){
+  if(!payeeId || !categoryId) return;
+  const map = getPayeeLastCategoryMap();
+  map[payeeId] = map[payeeId] || {};
+  map[payeeId][kind] = categoryId;
+  try{ localStorage.setItem('payee_last_category', JSON.stringify(map)); }catch(e){}
+}
+function suggestCategoryForPayee(payeeId, kind){
+  const map = getPayeeLastCategoryMap();
+  const catId = map?.[payeeId]?.[kind];
+  if(!catId) return null;
+  const sel = document.getElementById('txCategorySelect') || document.getElementById('categorySelect') || document.getElementById('txCategory');
+  if(sel && sel.value !== catId){
+    // Only auto-set if user hasn't chosen anything yet or it's empty/default
+    if(!sel.value || sel.value===''){
+      sel.value = catId;
+      try{ sel.dispatchEvent(new Event('change')); }catch(e){}
+    }
+  }
+  return catId || null;
+}
+
 function renderTransactions(){
   const txs = state.transactions;
   let income=0, expense=0;
