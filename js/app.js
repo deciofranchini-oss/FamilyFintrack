@@ -1,3 +1,14 @@
+function applySidebarLogoFromConfig(){
+  try{
+    const url = window.UI_CONFIG && window.UI_CONFIG.SIDEBAR_LOGO_URL;
+    if(!url) return;
+    const el = document.getElementById('sidebarLogoImg') || document.getElementById('sidebarLogo');
+    if(el && el.tagName === 'IMG'){
+      el.src = url;
+    }
+  }catch(e){}
+}
+
 function openSidebar(){
   document.getElementById('sidebar').classList.add('open');
   document.getElementById('sidebarOverlay').classList.add('open');
