@@ -1,21 +1,3 @@
-function applyConfiguredLogo(){
-  try{
-    // Priority 1: admin-configured logo saved in localStorage (synced by settings panel / Supabase)
-    let url = null;
-    try{ url = localStorage.getItem('app_logo_url'); }catch(e){}
-    // Priority 2: external ui-config.js fallback
-    if(!url){
-      try{ url = window.UI_CONFIG && window.UI_CONFIG.SIDEBAR_LOGO_URL; }catch(e){}
-    }
-    if(url && typeof setAppLogo === 'function'){
-      setAppLogo(url);
-    }else{
-      // If no URL, hide all logo imgs to avoid showing stale assets
-      document.querySelectorAll('img[data-app-logo="1"]').forEach(img=>{ img.style.display='none'; });
-    }
-  }catch(e){}
-}
-
 function applySidebarLogoFromConfig(){
   try{
     const url = window.UI_CONFIG && window.UI_CONFIG.SIDEBAR_LOGO_URL;
