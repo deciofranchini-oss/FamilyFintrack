@@ -1397,3 +1397,11 @@ body{ font-family: var(--sf); text-rendering: optimizeLegibility; -webkit-font-s
   transform: translateY(0) scale(1);
   opacity: 1;
 }
+
+
+/* Reports mobile scroll fix */
+#page-reports{ overflow-y:auto; padding-bottom:140px; }
+@media (max-width: 720px){
+  #page-reports .grid-2{ display:grid; grid-template-columns: 1fr !important; gap: 12px; }
+  #page-reports canvas{ max-width:100%; height:auto; }
+}
