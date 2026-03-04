@@ -1,3 +1,7 @@
+function lastDayOfMonth(year, month){
+  return new Date(year, month, 0).getDate();
+}
+
 let rptState = { view:'regular', txData:[] };
 let rptTxSortField = 'date', rptTxSortAsc = false;
 
@@ -20,7 +24,7 @@ function getRptDateRange() {
     to   = new Date(now.getFullYear(),q*3+3,0).toISOString().slice(0,10);
   } else if(p === 'year') {
     from = `${now.getFullYear()}-01-01`;
-    to   = `${now.getFullYear()}-12-31`;
+    to   = `${now.getFullYear()}-12-${String(lastDayOfMonth(y, m)).padStart(2,'0')}`;
   } else { // last12
     const d = new Date(); d.setMonth(d.getMonth()-11); d.setDate(1);
     from = d.toISOString().slice(0,10);
@@ -72,21 +76,12 @@ function loadCurrentReport() {
 }
 
 /* ── Fetch filtered transactions ── */
-async function fetchRptTransactions() {
-  // FALLBACK_TO_STATE_TX: if Supabase is not available (offline / not configured), use already-loaded state.transactions
-
+async async function fetchRptTransactions() {
   const {from, to} = getRptDateRange();
   const accId  = document.getElementById('rptAccount')?.value   || '';
   const typeV  = document.getElementById('rptType')?.value      || '';
   const catId  = document.getElementById('rptCategory')?.value  || '';
   const payId  = document.getElementById('rptPayee')?.value     || '';
-
-  const fromTo = {from, to};
-  const useLocal = (!window.sb && typeof sb==='undefined') || (typeof sb==='object' && sb===null);
-  if(useLocal || !sb){
-    const local = (state?.transactions||[]).filter(t=>t.date>=fromTo.from && t.date<=fromTo.to);
-    return local.filter(t=>!t.is_transfer);
-  }
 
   let q = sb.from('transactions')
     .select('*, accounts!transactions_account_id_fkey(name,color,currency), categories(name,color,type), payees(name)')
@@ -98,20 +93,9 @@ async function fetchRptTransactions() {
   if(typeV==='expense') q = q.lt('amount',0);
   if(typeV==='income')  q = q.gt('amount',0);
 
-  try{
-    const {data, error} = await q;
-    if(error) throw error;
-    return (data||[]).filter(t=>!t.is_transfer);
-  }catch(e){
-    toast((e?.message||'Falha ao carregar dados do Supabase') + ' (usando dados locais)', 'warning');
-    const local = (state?.transactions||[]).filter(t=>t.date>=from && t.date<=to);
-    // enrich minimal relations from state arrays when available
-    const accById = Object.fromEntries((state.accounts||[]).map(a=>[a.id,a]));
-    const catById = Object.fromEntries((state.categories||[]).map(c=>[c.id,c]));
-    const payById = Object.fromEntries((state.payees||[]).map(p=>[p.id,p]));
-    local.forEach(t=>{ t.accounts=t.accounts||accById[t.account_id]; t.categories=t.categories||catById[t.category_id]; t.payees=t.payees||payById[t.payee_id]; });
-    return local.filter(t=>!t.is_transfer);
-  }
+  const {data, error} = await q;
+  if(error) { toast(error.message,'error'); return []; }
+  return (data||[]).filter(t=>!t.is_transfer);
 }
 
 /* ═══ VIEW: ANÁLISE ═══ */
@@ -136,7 +120,13 @@ function _rptTopCompositionLines(catMap, total) {
   return lines;
 }
 
-async function loadReports() {
+async async function loadReports() {
+  if(!window.Chart){
+    const el=document.getElementById('reportsError');
+    if(el) el.textContent='Chart.js não carregou. Verifique conexão/cache.';
+    return;
+  }
+
   const {from, to} = getRptDateRange();
   const txs  = await fetchRptTransactions();
   rptState.txData = txs;
@@ -160,7 +150,57 @@ async function loadReports() {
 
   const FB = ['#2a6049','#1e5ba8','#b45309','#c0392b','#7c3aed','#2a7a4a','#d97706','#6b7280','#3d7a5e','#4e8f73'];
 
-  /* Despesas por categoria */
+function _isStr(v){ return typeof v === 'string'; }
+function _safeColorAny(v, fb){
+  const fallback = fb || '#6b7280';
+  if(_isStr(v) && v.trim()) return v;
+  if(v && typeof v === 'number') return fallback;
+  if(v && typeof v === 'object'){
+    const cand = v.value || v.hex || v.color;
+    if(_isStr(cand) && cand.trim()) return cand;
+  }
+  return fallback;
+}
+function sanitizeDatasets(data){
+  try{
+    if(!data || !Array.isArray(data.datasets)) return data;
+    data.datasets.forEach((ds, i)=>{
+      if(!ds || typeof ds !== 'object') return;
+      const fb = (Array.isArray(FB) && FB.length) ? FB[i%FB.length] : '#6b7280';
+      const keys = ['backgroundColor','borderColor','hoverBackgroundColor','hoverBorderColor','pointBackgroundColor','pointBorderColor','pointHoverBackgroundColor','pointHoverBorderColor'];
+      keys.forEach(k=>{
+        const v = ds[k];
+        if(Array.isArray(v)) ds[k] = v.map(x=>_safeColorAny(x, fb));
+        else if(v !== undefined) ds[k] = _safeColorAny(v, fb);
+      });
+    });
+  }catch(e){}
+  return data;
+}
+function plainClone(obj){
+  try{ return JSON.parse(JSON.stringify(obj)); }catch(e){ return obj; }
+}
+function sanitizeChartConfig(type, data, options){
+  const cleanData = sanitizeDatasets(data);
+  const cleanOptions = plainClone(options || {});
+  return { type, data: cleanData, options: cleanOptions };
+}
+
+
+
+  
+function safeColor(c, fallback){
+  const fb = fallback || '#6b7280';
+  if(typeof c === 'string' && c.trim()) return c;
+  // Allow {value:'#fff'} or {hex:'#fff'} shapes
+  if(c && typeof c === 'object'){
+    const v = c.value || c.hex || c.color;
+    if(typeof v === 'string' && v.trim()) return v;
+  }
+  return fb;
+}
+
+/* Despesas por categoria */
   const expMap = {};
   exps.forEach(t=>{
     const n=t.categories?.name||'Sem categoria', c=t.categories?.color||'#94a3b8';
@@ -171,7 +211,7 @@ async function loadReports() {
   if(expEntries.length)
     renderChart('reportCatChart','doughnut',expEntries.map(e=>e[0]),
       [{data:expEntries.map(e=>e[1].total),
-        backgroundColor:expEntries.map((e,i)=>e[1].color||FB[i%FB.length]),
+        backgroundColor: expEntries.map((e,i)=>safeColor(e[1].color, FB[i%FB.length])),
         borderWidth:2,borderColor:'#fff',hoverOffset:8}]);
 
   /* Receitas por categoria */
@@ -185,7 +225,7 @@ async function loadReports() {
   if(incEntries.length)
     renderChart('reportIncomeChart','doughnut',incEntries.map(e=>e[0]),
       [{data:incEntries.map(e=>e[1].total),
-        backgroundColor:incEntries.map((e,i)=>e[1].color||FB[i%FB.length]),
+        backgroundColor: incEntries.map((e,i)=>safeColor(e[1].color, FB[i%FB.length])),
         borderWidth:2,borderColor:'#fff',hoverOffset:8}]);
 
   /* Por conta */
@@ -869,7 +909,8 @@ function renderChart(id, type, labels, datasets, extraOptions={}) {
   const isDoughnut = type === 'doughnut' || type === 'pie';
   const isBar = type === 'bar';
 
-  state.chartInstances[id] = new Chart(ctx, {
+  try{
+    state.chartInstances[id] = new Chart(ctx, {
     type,
     data: { labels, datasets },
     options: {
@@ -962,6 +1003,12 @@ function renderChart(id, type, labels, datasets, extraOptions={}) {
       /* merged options */
     }
   });
+  }catch(e){
+    console.error('Report chart render error', e);
+    const el=document.getElementById('reportsError');
+    if(el) el.textContent = 'Erro ao renderizar gráficos: '+(e && e.message ? e.message : e);
+    return;
+  }
   // Merge extra options without losing defaults
   if(extraOptions && Object.keys(extraOptions).length) {
     state.chartInstances[id].options = _deepMerge(state.chartInstances[id].options || {}, extraOptions);
