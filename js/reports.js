@@ -117,6 +117,8 @@ function _rptTopCompositionLines(catMap, total) {
 }
 
 async async function loadReports() {
+  const NO_DATA__CATEGORY = 'No Data';
+
   if(!window.Chart){
     const el=document.getElementById('reportsError');
     if(el) el.textContent='Chart.js não carregou. Verifique conexão/cache.';
@@ -145,6 +147,58 @@ async async function loadReports() {
     `${fmtDate(from)} → ${fmtDate(to)}  ·  ${txs.length} transações`;
 
   const FB = ['#2a6049','#1e5ba8','#b45309','#c0392b','#7c3aed','#2a7a4a','#d97706','#6b7280','#3d7a5e','#4e8f73'];
+
+/* ===== Reports hardening utilities (no-regression patch) ===== */
+function safeColor(value, fallback){
+  const fb = fallback || '#6b7280';
+  if(typeof value === 'string'){
+    const s = value.trim();
+    return s ? s : fb;
+  }
+  if(value && typeof value === 'object'){
+    const cand = value.value || value.hex || value.color;
+    if(typeof cand === 'string' && cand.trim()) return cand.trim();
+  }
+  return fb;
+}
+function sanitizeChartDatasetColors(dataset, fallback){
+  if(!dataset || typeof dataset !== 'object') return;
+  const keys = [
+    'backgroundColor','borderColor','hoverBackgroundColor','hoverBorderColor',
+    'pointBackgroundColor','pointBorderColor','pointHoverBackgroundColor','pointHoverBorderColor'
+  ];
+  keys.forEach((k)=>{
+    if(dataset[k] === undefined) return;
+    if(Array.isArray(dataset[k])) dataset[k] = dataset[k].map(v=>safeColor(v, fallback));
+    else dataset[k] = safeColor(dataset[k], fallback);
+  });
+}
+function sanitizeChartData(data, palette){
+  try{
+    if(!data || typeof data !== 'object') return data;
+    if(!Array.isArray(data.labels)) data.labels = [];
+    if(!Array.isArray(data.datasets)) data.datasets = [];
+    const pal = Array.isArray(palette) && palette.length ? palette : ['#2a6049','#1f6feb','#ef4444','#22c55e','#a855f7','#f59e0b'];
+    data.datasets.forEach((ds,i)=>{
+      const fb = pal[i % pal.length];
+      sanitizeChartDatasetColors(ds, fb);
+      if(Array.isArray(ds.data) && data.labels.length && ds.data.length !== data.labels.length){
+        if(ds.data.length < data.labels.length){
+          ds.data = ds.data.concat(new Array(data.labels.length - ds.data.length).fill(0));
+        }else{
+          ds.data = ds.data.slice(0, data.labels.length);
+        }
+      }
+    });
+  }catch(e){}
+  return data;
+}
+function lastDayOfMonth(year, month1to12){
+  return new Date(year, month1to12, 0).getDate();
+}
+/* ============================================================ */
+
+
 
   
 function safeColor(c, fallback){
@@ -859,7 +913,10 @@ function _deepMerge(target, source) {
   return target;
 }
 
-function renderChart(id, type, labels, datasets, extraOptions={}) {
+\1
+  // Normalize data/options to avoid Chart.js crashes (e.g., non-string colors)
+  data = sanitizeChartData(data, (typeof FB !== 'undefined' ? FB : null));
+
   if(state.chartInstances[id]) state.chartInstances[id].destroy();
   const ctx = document.getElementById(id)?.getContext('2d');
   if(!ctx) return;
