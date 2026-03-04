@@ -33,7 +33,7 @@ function showLoginScreen() {
     ls.style.display = 'flex';
     // Fix logo: use same LOGO_URL used throughout the app
     const img = document.getElementById('loginLogoImg');
-    if (img) img.src = LOGO_URL;
+    if (typeof setAppLogo==='function') setAppLogo(getAppSetting ? (getAppSetting('app_logo_url','')||APP_LOGO_URL) : APP_LOGO_URL); else if (img) img.src = (APP_LOGO_URL||DEFAULT_LOGO_URL);
     // Load remembered credentials
     const saved = _loadRememberedCredentials();
     if (saved) {
@@ -219,6 +219,19 @@ function updateUserUI() {
     if (sub) sub.textContent = 'Controle de acesso · Perfil: Admin';
   }
 
+
+  // Admin-only nav items
+  const auditNav = document.getElementById('auditNav');
+  const settingsNav = document.getElementById('settingsNav');
+  if (auditNav) auditNav.style.display = (currentUser.role === 'admin') ? '' : 'none';
+  if (settingsNav) settingsNav.style.display = (currentUser.role === 'admin') ? '' : 'none';
+
+  // Topbar icon shortcuts
+  const topAuditBtn = document.getElementById('topAuditBtn');
+  const topSettingsBtn = document.getElementById('topSettingsBtn');
+  if (topAuditBtn) topAuditBtn.style.display = (currentUser.role === 'admin') ? '' : 'none';
+  if (topSettingsBtn) topSettingsBtn.style.display = (currentUser.role === 'admin') ? '' : 'none';
+
   // Apply permission restrictions
   applyPermissions();
 }
@@ -240,6 +253,18 @@ function applyPermissions() {
     const importNav = document.querySelector('.nav-item[onclick="navigate(\'import\')"]');
     if (importNav) importNav.style.display='none';
   }
+
+// Hide admin-only screens for non-admin
+if (!(p.role==='admin' || p.can_admin)) {
+  const settingsNav = document.querySelector('.nav-item[onclick="navigate(\'settings\')"]');
+  if (settingsNav) settingsNav.style.display='none';
+  const auditNav = document.getElementById('auditNav');
+  if (auditNav) auditNav.style.display='none';
+} else {
+  const auditNav = document.getElementById('auditNav');
+  if (auditNav) auditNav.style.display='';
+}
+
 }
 
 // ── Logout ──

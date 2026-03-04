@@ -9,9 +9,44 @@ function toggleDashGroup(key) {
   if (arrow) arrow.style.transform = collapsed ? 'rotate(-90deg)' : 'rotate(0deg)';
 }
 
+async function loadDashboardRecent(){
+  const status = document.getElementById('dashRecentStatus')?.value || '';
+  let q = famQ(
+    sb.from('transactions')
+      .select('*, status, accounts!transactions_account_id_fkey(name), categories(name,color)')
+  ).order('date', { ascending: false }).limit(10);
+
+  if (status) q = q.eq('status', status);
+
+  const { data: recent, error } = await q;
+  if (error) { console.warn('[dashboard recent]', error.message); }
+
+  const body = document.getElementById('recentTxBody');
+  if (!body) return;
+
+  if (!recent?.length) {
+    body.innerHTML = '<tr><td colspan="4" class="text-muted" style="text-align:center;padding:24px;font-size:.83rem">Sem transações</td></tr>';
+    return;
+  }
+
+  body.innerHTML = (recent || []).map(t => {
+    const isPend = (t.status || 'confirmed') === 'pending';
+    const rowStyle = isPend ? 'background:rgba(245,158,11,.10)' : '';
+    const badge = isPend ? '<span class="badge" style="margin-left:6px;background:rgba(245,158,11,.16);color:var(--amber,#b45309);border:1px solid rgba(180,83,9,.18);font-size:.65rem">⏳ pendente</span>' : '';
+    const clip = t.attachment_url ? ' <span title="Possui anexo" style="font-size:.85rem;opacity:.75">📎</span>' : '';
+    return `<tr class="tx-row-clickable" data-tx-id="${t.id}" onclick="openTxDetail('${t.id}')" style="cursor:pointer;${rowStyle}">
+      <td class="text-muted" style="white-space:nowrap">${fmtDate(t.date)}</td>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.description||'—')}${clip}${badge}</td>
+      <td>${t.categories?`<span class="badge" style="background:${t.categories.color}18;color:${t.categories.color};border:1px solid ${t.categories.color}28">${esc(t.categories.name)}</span>`:'—'}</td>
+      <td class="${t.amount>=0?'amount-pos':'amount-neg'}" style="white-space:nowrap">${fmt(t.amount)}</td>
+    </tr>`;
+  }).join('');
+}
+
+
 async function loadDashboard(){
   const now=new Date(),y=now.getFullYear(),m=String(now.getMonth()+1).padStart(2,'0');
-  const{data:monthTxs}=await famQ(sb.from('transactions').select('amount,is_transfer')).gte('date',`${y}-${m}-01`).lte('date',`${y}-${m}-31`);
+  const{data:monthTxs}=await famQ(sb.from('transactions').select('amount,is_transfer,status')).eq('status','confirmed').gte('date',`${y}-${m}-01`).lte('date',`${y}-${m}-31`);
   let income=0,expense=0;(monthTxs||[]).filter(t=>!t.is_transfer).forEach(t=>{if(t.amount>0)income+=t.amount;else expense+=Math.abs(t.amount);});
   // Patrimônio: soma dos saldos de todas as contas ativas (já carregadas em state)
   await loadAccounts(); // garante dados frescos
@@ -20,10 +55,38 @@ async function loadDashboard(){
   },0);
   document.getElementById('statTotal').textContent=fmt(total,'BRL');document.getElementById('statIncome').textContent=fmt(income);document.getElementById('statExpenses').textContent=fmt(expense);
   const bal=income-expense,balEl=document.getElementById('statBalance');balEl.textContent=fmt(bal);balEl.className='stat-value '+(bal>=0?'text-green':'text-red');
-  const{data:recent}=await famQ(sb.from('transactions').select('*, accounts!transactions_account_id_fkey(name), categories(name,color)')).order('date',{ascending:false}).limit(10);
-  const body=document.getElementById('recentTxBody');
-  if(!recent?.length){body.innerHTML='<tr><td colspan="4" class="text-muted" style="text-align:center;padding:24px;font-size:.83rem">Sem transações</td></tr>';}
-  else body.innerHTML=(recent||[]).map(t=>`<tr><td class="text-muted" style="white-space:nowrap">${fmtDate(t.date)}</td><td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.description||'—')}</td><td>${t.categories?`<span class="badge" style="background:${t.categories.color}18;color:${t.categories.color};border:1px solid ${t.categories.color}28">${esc(t.categories.name)}</span>`:'—'}</td><td class="${t.amount>=0?'amount-pos':'amount-neg'}" style="white-space:nowrap">${fmt(t.amount)}</td></tr>`).join('');
+  // Pending transactions badge
+  try {
+    const { count: pendingCount } = await famQ(
+      sb.from('transactions').select('id', { count: 'exact', head: true })
+    ).eq('status','pending');
+    const pb = document.getElementById('dashPendingBadge');
+    if (pb) {
+      if ((pendingCount || 0) > 0) {
+        pb.style.display = '';
+        pb.textContent = `⏳ ${pendingCount} pendente${pendingCount !== 1 ? 's' : ''}`;
+        pb.title = 'Clique para ver pendentes';
+        pb.style.cursor = 'pointer';
+        pb.onclick = () => {
+          navigate('transactions');
+          // Apply pending filter when user lands on Transactions
+          setTimeout(() => {
+            const sel = document.getElementById('txStatusFilter');
+            if (sel) { sel.value = 'pending'; filterTransactions(); }
+          }, 50);
+        };
+      } else {
+        pb.style.display = 'none';
+      }
+    }
+  } catch(e) {
+    // fail silently
+  }
+
+  // Recent transactions table (supports status filter)
+  await loadDashboardRecent();
+  await loadDashboardAutoRunSummary();
+
   // Render account balances grouped by account group
   (function renderAccountBalances() {
     const el = document.getElementById('accountBalancesList');
@@ -130,3 +193,29 @@ async function renderCategoryChart(){
 /* ═══════════════════════════════════════════════════════════════
    REPORTS — state, filters, data, export
 ═══════════════════════════════════════════════════════════════ */
+
+
+// Daily summary: how many scheduled auto-registrations ran today
+async function loadDashboardAutoRunSummary(){
+  const el = document.getElementById('dashAutoRunSummary');
+  if(!el || !sb) return;
+  try{
+    const today = new Date().toISOString().slice(0,10);
+    const q = famQ(sb.from('scheduled_run_logs').select('id',{count:'exact', head:true}))
+      .eq('scheduled_date', today);
+    const { count, error } = await q;
+    if(error) throw error;
+    const n = count || 0;
+    if(n>0){
+      el.style.display='';
+      el.textContent = `📌 Hoje: ${n} programada${n!==1?'s':''} auto-registrada${n!==1?'s':''}`;
+      const isAdmin = (typeof currentUser!=='undefined') && (currentUser?.role==='admin' || currentUser?.can_admin);
+      if(!isAdmin){ el.style.cursor='default'; el.onclick=null; }
+    } else {
+      el.style.display='none';
+    }
+  }catch(e){
+    // table may not exist; hide silently
+    el.style.display='none';
+  }
+}

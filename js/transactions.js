@@ -226,7 +226,7 @@ async function confirmTxClipImport() {
 async function loadTransactions(){
   const f=state.txFilter;
   const isGroup = state.txView === 'group';
-  let q=famQ(sb.from('transactions').select('*, accounts!transactions_account_id_fkey(name,currency,color,icon), payees(name), categories(name,color,icon)',{count:'exact'})).order(state.txSortField,{ascending:state.txSortAsc});
+  let q=famQ(sb.from('transactions').select('*, accounts!transactions_account_id_fkey(name,currency,color,icon), payees(name), categories(name,color,icon)',{count:'exact'})).order('status',{ascending:false}).order(state.txSortField,{ascending:state.txSortAsc});
   // Pagination only in flat view; grouped view loads all for the current filter set
   if(!isGroup) q=q.range(state.txPage*state.txPageSize,(state.txPage+1)*state.txPageSize-1);
   if(f.month){
@@ -239,6 +239,9 @@ async function loadTransactions(){
   }
   if(f.account)q=q.eq('account_id',f.account);if(f.search)q=q.ilike('description','%'+f.search+'%');
   if(f.type==='income')q=q.gt('amount',0).eq('is_transfer',false);else if(f.type==='expense')q=q.lt('amount',0).eq('is_transfer',false);else if(f.type==='transfer')q=q.eq('is_transfer',true).eq('is_card_payment',false);else if(f.type==='card_payment')q=q.eq('is_card_payment',true);
+  // Status filter: pending | confirmed | all
+  if(f.status==='pending') q=q.eq('status','pending');
+  else if(f.status==='confirmed') q=q.eq('status','confirmed');
   const{data,count,error}=await q;if(error){toast(error.message,'error');return;}state.transactions=data||[];state.txTotal=count||0;renderTransactions();
 }
 function filterTransactions(){
@@ -246,6 +249,7 @@ function filterTransactions(){
   state.txFilter.month=document.getElementById('txMonth').value;
   state.txFilter.account=document.getElementById('txAccount').value;
   state.txFilter.type=document.getElementById('txType').value;
+  state.txFilter.status=(document.getElementById('txStatusFilter')?.value)||'';
   state.txPage=0;
   if(state.txView==='flat') document.getElementById('txSummaryBar').style.display='none';
   loadTransactions();
@@ -285,8 +289,8 @@ function populateTxMonthFilter() {
 }
 function sortTx(field){if(state.txSortField===field)state.txSortAsc=!state.txSortAsc;else{state.txSortField=field;state.txSortAsc=false;}loadTransactions();}
 function txRow(t, showAccount=true) {
-  return `<tr class="tx-row-clickable" onclick="openTxDetail('${t.id}')" style="cursor:pointer" onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background=''">
-    <td class="text-muted" style="white-space:nowrap">${fmtDate(t.date)}</td>
+  return `<tr class="tx-row-clickable ${(t.status||'confirmed')==='pending' ? 'tx-pending' : ''}" data-tx-id="${t.id}" onclick="openTxDetail('${t.id}')" style="cursor:pointer" onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background=''">
+    <td class="text-muted" style="white-space:nowrap">${fmtDate(t.date)}${(t.status||'confirmed')==='pending' ? ' <span class="badge" style="margin-left:6px;background:var(--yellow-lt,#fef9c3);color:#92400e;border:1px solid #fcd34d">Pendente</span>' : ''}</td>
     ${showAccount ? `<td><span class="badge badge-muted">${esc(t.accounts?.name||'—')}</span></td>` : ''}
     <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.description||'—')}</td>
     <td class="text-muted">${esc(t.payees?.name||'—')}</td>
@@ -308,7 +312,7 @@ function setTxView(v) {
 function renderTransactions(){
   const txs = state.transactions;
   let income=0, expense=0;
-  txs.forEach(t=>{if(t.amount>0)income+=t.amount; else expense+=t.amount;});
+  txs.forEach(t=>{ const st=(t.status||'confirmed'); if(st==='pending') return; if(t.amount>0)income+=t.amount; else expense+=t.amount;});
   document.getElementById('txCount').textContent = `${state.txTotal} transações`;
   document.getElementById('txTotalIncome').textContent = income ? `+${fmt(income)}` : '';
   document.getElementById('txTotalExpense').textContent = expense ? fmt(expense) : '';
@@ -321,9 +325,14 @@ function renderTransactions(){
   // ── FLAT VIEW ──
   const body = document.getElementById('txBody');
   if(!txs.length){body.innerHTML='<tr><td colspan="7" class="text-muted" style="text-align:center;padding:32px;font-size:.83rem">Nenhuma transação encontrada</td></tr>';return;}
-  body.innerHTML = txs.map(t => txRow(t, true)).join('');
+  const pending = txs.filter(t => (t.status||'confirmed')==='pending');
+  const confirmed = txs.filter(t => (t.status||'confirmed')!=='pending');
+  const sep = (pending.length && confirmed.length) ? `<tr><td colspan="7" style="padding:6px 10px;background:var(--bg2);color:var(--muted);font-size:.72rem;font-weight:700">CONFIRMADAS</td></tr>` : '';
+  body.innerHTML = pending.map(t => txRow(t, true)).join('') + sep + confirmed.map(t => txRow(t, true)).join('');
   const total=state.txTotal, page=state.txPage, ps=state.txPageSize;
   document.getElementById('txPagination').innerHTML=`<span>${page*ps+1}–${Math.min((page+1)*ps,total)} de ${total}</span><div style="display:flex;gap:5px"><button class="btn btn-ghost btn-sm" ${page===0?'disabled':''} onclick="changePage(-1)">‹ Anterior</button><button class="btn btn-ghost btn-sm" ${(page+1)*ps>=total?'disabled':''} onclick="changePage(1)">Próxima ›</button></div>`;
+
+  try{ initTxMobileUX(); }catch(e){}
 }
 
 function renderTransactionsGrouped(txs) {
@@ -336,9 +345,12 @@ function renderTransactionsGrouped(txs) {
     const key = t.account_id || '__none__';
     if(!groups[key]) groups[key] = { account: t.accounts, txs: [], income: 0, expense: 0, balance: 0 };
     groups[key].txs.push(t);
-    if(t.amount > 0) groups[key].income += t.amount;
-    else groups[key].expense += t.amount;
-    groups[key].balance += t.amount;
+    const st=(t.status||'confirmed');
+    if(st!=='pending') {
+      if(t.amount > 0) groups[key].income += t.amount;
+      else groups[key].expense += t.amount;
+      groups[key].balance += t.amount;
+    }
   });
 
   // Sort groups by account name
@@ -355,14 +367,13 @@ function renderTransactionsGrouped(txs) {
     const g = groups[k];
     const acct = state.accounts.find(a => a.id === k) || {};
     const col = acct.color || 'var(--accent)';
-    const initialBal = parseFloat(acct.initial_balance) || 0;
-    const bal = initialBal + (g.balance || 0);
+    const bal = g.balance;
     return `<div onclick="document.getElementById('txGroup-${k}').scrollIntoView({behavior:'smooth',block:'start'})"
       style="display:flex;align-items:center;gap:6px;padding:6px 12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);cursor:pointer;transition:box-shadow .15s;font-size:.8rem"
       onmouseover="this.style.boxShadow='var(--shadow)'" onmouseout="this.style.boxShadow=''">
       ${renderIconEl(acct.icon, acct.color, 20)}
       <span style="font-weight:600;color:var(--text)">${esc(g.account?.name||'Sem conta')}</span>
-      <span class="${bal>=0?'amount-pos':'amount-neg'}" style="font-weight:600;font-size:.85rem">${fmt(bal, acct.currency || 'BRL')}</span>
+      <span class="${bal>=0?'amount-pos':'amount-neg'}" style="font-weight:600;font-size:.85rem">${fmt(bal)}</span>
     </div>`;
   }).join('');
 
@@ -382,7 +393,7 @@ function renderTransactionsGrouped(txs) {
           ${g.income ? `<span class="badge badge-green" style="font-size:.75rem">+${fmt(g.income)}</span>` : ''}
           ${g.expense ? `<span class="badge badge-red" style="font-size:.75rem">${fmt(g.expense)}</span>` : ''}
           <span class="badge" style="font-size:.78rem;font-weight:700;background:${g.balance>=0?'var(--green-lt)':'var(--red-lt)'};color:${g.balance>=0?'var(--green)':'var(--red)'}">
-            ${( (parseFloat((state.accounts.find(a=>a.id===k)||{}).initial_balance)||0) + g.balance) >=0 ? '=':''} ${fmt((parseFloat((state.accounts.find(a=>a.id===k)||{}).initial_balance)||0) + g.balance), ((state.accounts.find(a=>a.id===k)||{}).currency || 'BRL'))}
+            ${g.balance>=0?'=':''} ${fmt(g.balance)}
           </span>
           <span style="font-size:.7rem;color:var(--muted)">${g.txs.length} lanç.</span>
         </div>
@@ -412,6 +423,7 @@ function changePage(dir){state.txPage+=dir;loadTransactions();}
 function openTransactionModal(id=''){resetTxModal();document.getElementById('txDate').value=new Date().toISOString().slice(0,10);document.getElementById('txModalTitle').textContent='Nova Transação';if(id)editTransaction(id);else openModal('txModal');}
 function resetTxModal(){
   ['txId','txDesc','txMemo','txTags'].forEach(f=>document.getElementById(f).value='');
+  const stEl=document.getElementById('txStatus'); if(stEl) stEl.value='confirmed';
   setAmtField('txAmount', 0);
   document.getElementById('txTypeField').value='expense';
   setTxType('expense');clearPayeeField('tx');hideCatSuggestion();setCatPickerValue(null);
@@ -511,6 +523,7 @@ async function saveTransaction(){
     category_id:document.getElementById('txCategoryId').value||null,
     memo:document.getElementById('txMemo').value,
     tags:tags.length?tags:null,
+    status: (document.getElementById('txStatus')?.value || 'confirmed'),
     is_transfer:isTransfer,
     is_card_payment:isCardPayment,
     transfer_to_account_id:isTransfer?document.getElementById('txTransferTo').value||null:null,
@@ -537,6 +550,8 @@ async function saveTransaction(){
           tags: data.tags,
           is_transfer: true,
           is_card_payment: data.is_card_payment,
+        status: data.status,
+          status: data.status,
           transfer_to_account_id: data.account_id,
           updated_at: new Date().toISOString(),
         }).eq('id', orig.linked_transfer_id);
@@ -558,6 +573,7 @@ async function saveTransaction(){
         tags: data.tags,
         is_transfer: true,
         is_card_payment: data.is_card_payment,
+        status: data.status,
         transfer_to_account_id: data.account_id,
         updated_at: new Date().toISOString(),
         family_id: famId(),
@@ -676,6 +692,9 @@ async function openTxDetail(id) {
   if (error || !data) { toast('Transação não encontrada', 'error'); return; }
   const t = data;
 
+  // Cache current status for quick toggle actions
+  window._txDetailStatus = (t.status || 'confirmed');
+
   const isIncome  = t.amount >= 0;
   const amtClass  = isIncome ? 'amount-pos' : 'amount-neg';
   const typeLabel = t.is_card_payment ? '💳 Pgto. Cartão' : t.is_transfer ? '🔄 Transferência' : isIncome ? '📈 Receita' : '📉 Despesa';
@@ -728,6 +747,14 @@ async function openTxDetail(id) {
     <div style="text-align:center;padding:22px 20px 16px;border-bottom:1px solid var(--border)">
       <div class="${amtClass}" style="font-size:2rem;font-weight:700;letter-spacing:-.02em">${fmt(t.amount, t.currency||'BRL')}</div>
       <div style="margin-top:4px;font-size:.8rem;color:var(--muted)">${typeLabel} &nbsp;·&nbsp; ${fmtDate(t.date)}</div>
+      <div style="margin-top:10px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+        <span class="badge" style="font-size:.78rem;font-weight:700;background:${(t.status||'confirmed')==='pending'?'var(--yellow-lt,#fef9c3)':'var(--green-lt)'};color:${(t.status||'confirmed')==='pending'?'#92400e':'var(--green)'};border:1px solid ${(t.status||'confirmed')==='pending'?'#fcd34d':'var(--green)'}30">
+          ${(t.status||'confirmed')==='pending'?'⏳ Pendente':'✅ Confirmada'}
+        </span>
+        <button class="btn btn-ghost btn-sm" onclick="toggleTxDetailStatus()" style="font-weight:700">
+          ${(t.status||'confirmed')==='pending'?'✅ Confirmar':'⏳ Marcar pendente'}
+        </button>
+      </div>
     </div>
     <div style="padding:4px 20px 8px">
       <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border)">
@@ -760,4 +787,129 @@ function _txDetailAction(action) {
   if (action === 'edit') editTransaction(_txDetailId);
   else if (action === 'dup') duplicateTransaction(_txDetailId);
   else if (action === 'del') deleteTransaction(_txDetailId);
+}
+
+// Quick toggle: ✅ Confirmar / ⏳ Pendente directly from the transaction detail
+async function toggleTxDetailStatus() {
+  if (!_txDetailId) return;
+  const cur = (window._txDetailStatus || 'confirmed');
+  const next = (cur === 'pending') ? 'confirmed' : 'pending';
+  try {
+    const { error } = await sb.from('transactions')
+      .update({ status: next, updated_at: new Date().toISOString() })
+      .eq('id', _txDetailId);
+    if (error) { toast(error.message, 'error'); return; }
+    window._txDetailStatus = next;
+    // Refresh lists and dashboard totals
+    await loadTransactions();
+    if (state.currentPage === 'dashboard') loadDashboard();
+    // Re-open detail to reflect the new status (keeps the user in context)
+    await openTxDetail(_txDetailId);
+    toast(next === 'pending' ? 'Marcada como pendente' : 'Confirmada', 'success');
+  } catch (e) {
+    toast('Erro: ' + e.message, 'error');
+    console.error(e);
+  }
+}
+
+
+// ─────────────────────────────────────────────
+// Mobile UX: swipe to confirm + compact view
+// ─────────────────────────────────────────────
+let _txSwipeBound = false;
+function initTxMobileUX(){
+  // Bind once using event delegation
+  if(_txSwipeBound) return;
+  _txSwipeBound = true;
+  let startX=0, startY=0, targetEl=null, tracking=false;
+
+  document.addEventListener('touchstart', (ev)=>{
+    const row = ev.target.closest?.('.tx-row-clickable');
+    if(!row) return;
+    // Only enable swipe on small screens
+    if(window.innerWidth>720) return;
+    tracking=true;
+    targetEl=row;
+    const t=ev.touches[0];
+    startX=t.clientX; startY=t.clientY;
+  }, {passive:true});
+
+  document.addEventListener('touchmove', (ev)=>{
+    if(!tracking||!targetEl) return;
+    const t=ev.touches[0];
+    const dx=t.clientX-startX; const dy=t.clientY-startY;
+    if(Math.abs(dy) > Math.abs(dx)) return; // vertical scroll wins
+
+    // Allow both directions: right = confirm, left = back to pending
+    const clamped = Math.max(-90, Math.min(dx, 90));
+    targetEl.style.transition='none';
+    targetEl.style.transform=`translateX(${clamped}px)`;
+
+    if(clamped > 0){
+      targetEl.style.background='var(--green-lt,#dcfce7)';
+    } else if(clamped < 0){
+      targetEl.style.background='var(--amber-lt,#fffbeb)';
+    }
+  }, {passive:true});
+
+  document.addEventListener('touchend', async (ev)=>{
+    if(!tracking||!targetEl) return;
+    const id = targetEl.getAttribute('data-tx-id');
+    const dx = (targetEl.style.transform||'').match(/translateX\(([-0-9.]+)px\)/);
+    const moved = dx ? parseFloat(dx[1]) : 0;
+
+    // Reset visuals with animation
+    targetEl.style.transition='transform 180ms ease, background 180ms ease';
+    targetEl.style.transform='translateX(0px)';
+    targetEl.style.background='';
+
+    tracking=false;
+    const el=targetEl; targetEl=null;
+
+    if(!id) return;
+    if(Math.abs(moved) < 60) return;
+
+    const isPending = el.classList.contains('tx-pending');
+
+    try {
+      if(moved > 0) {
+        // Swipe right: pending -> confirmed
+        if(!isPending) return;
+        el.classList.add('tx-confirm-anim');
+        setTimeout(()=>el.classList.remove('tx-confirm-anim'), 650);
+        await setTransactionStatus(id, 'confirmed');
+      } else {
+        // Swipe left: confirmed -> pending
+        if(isPending) return;
+        el.classList.add('tx-pending-anim');
+        setTimeout(()=>el.classList.remove('tx-pending-anim'), 650);
+        await setTransactionStatus(id, 'pending');
+      }
+    } catch(e) {
+      toast('Erro ao atualizar status: '+e.message,'error');
+    }
+  }, {passive:true});
+
+  // Compact view: apply class based on preference
+  applyTxCompactPreference();
+}
+
+function applyTxCompactPreference(){
+  try{
+    const pref = (typeof getUserPreference==='function') ? getUserPreference('transactions','compact_view') : null;
+    const isCompact = pref === true || pref === 'true' || localStorage.getItem('tx_compact_view')==='1';
+    document.body.classList.toggle('tx-compact', !!isCompact);
+  }catch(e){}
+}
+
+// Toggle status helper used by detail view + swipe
+async function setTransactionStatus(txId, status){
+  if(!sb) throw new Error('Sem conexão');
+  const { error } = await sb.from('transactions').update({ status, updated_at: new Date().toISOString() }).eq('id', txId);
+  if(error) throw error;
+  // Refresh views
+  await loadAccounts();
+  if(state.currentPage==='transactions') await loadTransactions();
+  if(state.currentPage==='dashboard') await loadDashboard();
+  toast(status==='confirmed' ? '✅ Confirmada' : '⏳ Marcada como pendente', 'success');
 }

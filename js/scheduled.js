@@ -1,6 +1,41 @@
 // ── State ──────────────────────────────────────────────
 state.scheduled = [];
 
+
+async function _createPairedTransferLeg(originTx, sc, actualDate, memoOverride=null) {
+  if(!sc?.transfer_to_account_id) return null;
+  const pairedTx = {
+    family_id: famId(),
+    date: actualDate,
+    description: sc.description,
+    amount: Math.abs(originTx.amount),
+    account_id: sc.transfer_to_account_id,
+    payee_id: null,
+    category_id: sc.category_id || null,
+    memo: memoOverride ?? originTx.memo ?? sc.memo,
+    tags: sc.tags,
+    is_transfer: true,
+    is_card_payment: sc.type==='card_payment',
+    transfer_to_account_id: sc.account_id,
+    updated_at: new Date().toISOString(),
+    status: originTx.status || 'confirmed',
+  };
+  let pairedResult, pairedErr;
+  ({data:pairedResult, error:pairedErr} = await sb.from('transactions')
+    .insert({...pairedTx, linked_transfer_id: originTx.id}).select().single());
+  if(pairedErr && pairedErr.message?.includes('linked_transfer_id')) {
+    ({data:pairedResult, error:pairedErr} = await sb.from('transactions')
+      .insert(pairedTx).select().single());
+  }
+  if(pairedErr) {
+    toast('Ocorrência registrada, mas erro ao criar lançamento de entrada: ' + pairedErr.message, 'warning');
+    return null;
+  }
+  // Back-link origin to paired (best-effort)
+  await sb.from('transactions').update({linked_transfer_id: pairedResult.id}).eq('id', originTx.id).then(()=>{}).catch(()=>{});
+  return pairedResult;
+}
+
 // ── Frequency helpers ──────────────────────────────────
 const FREQ_LABELS = {
   once: 'Uma vez', weekly: 'Semanal', biweekly: 'Quinzenal',
@@ -87,9 +122,20 @@ function scStatusLabel(sc) {
 // ── Load & Render ──────────────────────────────────────
 async function loadScheduled() {
   try {
-    const { data, error } = await famQ(sb.from('scheduled_transactions').select('*, accounts!scheduled_transactions_account_id_fkey(name,currency), payees(name), categories(name,color), occurrences:scheduled_occurrences(id,scheduled_date,actual_date,amount,memo,transaction_id)')).order('start_date');
+    const { data, error } = await famQ(sb.from('scheduled_transactions').select('*, accounts!scheduled_transactions_account_id_fkey(name,currency), payees(name), categories(name,color), occurrences:scheduled_occurrences(id,scheduled_date,actual_date,amount,memo,transaction_id)'));
     if(error) throw error;
     state.scheduled = data || [];
+
+// Sort by next scheduled occurrence (closest first)
+state.scheduled.sort((a,b) => {
+  const da = getNextOccurrence(a) || '9999-12-31';
+  const db = getNextOccurrence(b) || '9999-12-31';
+  if (da < db) return -1;
+  if (da > db) return 1;
+  // tie-breaker: description
+  return (a.description||'').localeCompare(b.description||'');
+});
+
   } catch(e) {
     // Table might not exist yet
     if(e.message?.includes('does not exist') || e.code === '42P01') {
@@ -352,6 +398,9 @@ function openScheduledModal(id='') {
   const ndEl = document.getElementById('scNotifyDaysBefore');
   const ndDiv = document.getElementById('scNotifyEmailDetails');
   if(arEl) arEl.checked = sc?.auto_register || false;
+  const acEl = document.getElementById('scAutoConfirm');
+  if(acEl) acEl.checked = (sc?.auto_confirm ?? true);
+
   if(neEl) {
     neEl.checked = sc?.notify_email || false;
     if(ndDiv) ndDiv.style.display = neEl.checked ? '' : 'none';
@@ -452,6 +501,7 @@ async function saveScheduled() {
   const tags = document.getElementById('scTags').value.split(',').map(s=>s.trim()).filter(Boolean);
 
   const autoReg = document.getElementById('scAutoRegister')?.checked || false;
+  const autoConfirm = document.getElementById('scAutoConfirm')?.checked ?? true;
   const notifyEm = document.getElementById('scNotifyEmail')?.checked || false;
   const isScTransfer = type==='transfer' || type==='card_payment';
   const isScCardPayment = type==='card_payment';
@@ -473,6 +523,7 @@ async function saveScheduled() {
     end_count: endType==='count' ? parseInt(document.getElementById('scEndCount').value)||null : null,
     end_date: endType==='date' ? document.getElementById('scEndDate').value||null : null,
     auto_register: autoReg,
+    auto_confirm: autoConfirm,
     notify_email: notifyEm,
     notify_email_addr: notifyEm ? (document.getElementById('scNotifyEmailAddr')?.value.trim()||null) : null,
     notify_days_before: notifyEm ? parseInt(document.getElementById('scNotifyDaysBefore')?.value||'1') : 1,
@@ -544,6 +595,7 @@ async function confirmRegisterOccurrence() {
   const finalAmount = (sc.type==='expense' || isScTransfer) ? -Math.abs(amount) : Math.abs(amount);
 
   // 1. Create real transaction (debit / origin leg)
+  const txStatus = (sc.auto_confirm ?? true) ? 'confirmed' : 'pending';
   const { data: txData, error: txErr } = await sb.from('transactions').insert({ family_id: famId(),
     date: actualDate,
     description: sc.description,
@@ -557,6 +609,7 @@ async function confirmRegisterOccurrence() {
     is_card_payment: sc.type==='card_payment',
     transfer_to_account_id: isScTransfer ? sc.transfer_to_account_id : null,
     updated_at: new Date().toISOString(),
+    status: txStatus,
   }).select().single();
   if(txErr) { toast(txErr.message,'error'); return; }
 
@@ -656,3 +709,162 @@ CREATE POLICY "Allow all" ON scheduled_occurrences FOR ALL USING (true) WITH CHE
 /* ═══════════════════════════════════════════════════════════════
    ATTACHMENT UPLOAD (Supabase Storage)
 ═══════════════════════════════════════════════════════════════ */
+
+
+async function runScheduledAutoRegister() {
+  // Runs in browser session after boot. Registers missing occurrences up to today (and optionally days ahead).
+  try {
+    const cfg = getAutoCheckConfig ? getAutoCheckConfig() : { daysAhead: 0 };
+    const daysAhead = parseInt(cfg?.daysAhead || 0, 10) || 0;
+    const today = new Date();
+    const toDate = new Date(today.getTime() + daysAhead*86400000);
+    const toStr = toDate.toISOString().slice(0,10);
+    const todayStr = today.toISOString().slice(0,10);
+
+    // Ensure scheduled loaded
+    if(!state.scheduled || !state.scheduled.length) return 0;
+
+    let created = 0;
+    const createdItems = [];
+    for(const sc of state.scheduled) {
+      if(sc.status !== 'active' || !sc.auto_register) continue;
+      const occDates = generateOccurrences(sc, 500);
+      const registered = new Set((sc.occurrences||[]).filter(o=>o.transaction_id).map(o=>o.scheduled_date));
+      for(const d of occDates) {
+        if(d > toStr) continue;
+        if(registered.has(d)) continue;
+
+        // Reuse manual register flow (but without UI modal)
+        const actualDate = d; // register on scheduled date
+        const isScTransfer = sc.type==='transfer' || sc.type==='card_payment';
+        const amount = sc.amount;
+        const finalAmount = amount; // already signed in DB
+        const txStatus = (sc.auto_confirm ?? true) ? 'confirmed' : 'pending';
+
+        const { data: txData, error: txErr } = await sb.from('transactions').insert({ family_id: famId(),
+          date: actualDate,
+          description: sc.description,
+          amount: finalAmount,
+          account_id: sc.account_id,
+          payee_id: isScTransfer ? null : (sc.payee_id || null),
+          category_id: sc.category_id || null,
+          memo: sc.memo,
+          tags: sc.tags,
+          is_transfer: isScTransfer,
+          is_card_payment: sc.type==='card_payment',
+          transfer_to_account_id: isScTransfer ? sc.transfer_to_account_id : null,
+          updated_at: new Date().toISOString(),
+          status: txStatus,
+        }).select().single();
+        if(txErr) { console.warn('[auto_register]', txErr.message); continue; }
+
+        if(isScTransfer) await _createPairedTransferLeg(txData, sc, actualDate, sc.memo);
+
+        createdItems.push({ scheduled_id: sc.id, description: sc.description, date: actualDate, amount: finalAmount, status: txStatus, tx_id: txData.id, notify_email: sc.notify_email, notify_email_addr: sc.notify_email_addr });
+
+        // Optional email notification via EmailJS
+        try{
+          const cfg2 = getAutoCheckConfig ? getAutoCheckConfig() : null;
+          const method = cfg2?.method || 'browser';
+          const emailTo = sc.notify_email ? (sc.notify_email_addr || cfg2?.emailDefault || currentUser?.email) : null;
+          if(method==='email' && emailTo && typeof sendScheduledNotification==='function') {
+            await sendScheduledNotification(sc, actualDate, finalAmount, emailTo);
+          }
+        }catch(e){ console.warn('[auto_register notify]', e.message); }
+
+
+        // mark occurrence
+        const { error: occErr } = await sb.from('scheduled_occurrences').insert({
+          scheduled_id: sc.id,
+          scheduled_date: d,
+          actual_date: actualDate,
+          amount: finalAmount,
+          memo: sc.memo,
+          transaction_id: txData.id
+        });
+        if(occErr) console.warn('[auto_register occ]', occErr.message);
+
+        created++;
+
+        // If this scheduled is one-time, remove it from scheduled list after execution on its due date
+        try{
+          if((sc.frequency==='once' || sc.frequency==='single' || !sc.frequency) && d===todayStr){
+            await sb.from('scheduled_transactions').delete().eq('id', sc.id);
+          }
+        }catch(e){ console.warn('[auto_register delete]', e.message); }
+
+      }
+    }
+    if(created) {
+      // Persist audit logs (best-effort)
+      try{
+        for(const it of createdItems){
+          await insertScheduledRunLog({
+            family_id: famId(),
+            scheduled_id: it.scheduled_id,
+            scheduled_date: it.date,
+            transaction_id: it.tx_id,
+            status: it.status,
+            amount: it.amount,
+            description: it.description,
+            created_at: new Date().toISOString(),
+          });
+        }
+      }catch(e){}
+
+      // Browser notification summary
+      try{ await showAutoRegisterNotification(createdItems); }catch(e){}
+
+      await loadScheduled(); // refresh occurrences
+      await loadAccounts();  // refresh balances (pending excluded now)
+      if(state.currentPage==='transactions') loadTransactions();
+      if(state.currentPage==='dashboard') loadDashboard();
+      toast(`✓ ${created} ocorrência(s) registrada(s) automaticamente`, 'success');
+    }
+    return created;
+  } catch(e) {
+    console.warn('runScheduledAutoRegister error', e);
+    return 0;
+  }
+}
+
+
+// ─────────────────────────────────────────────
+// Auto-run logs (admin audit)
+// ─────────────────────────────────────────────
+async function insertScheduledRunLog(entry){
+  try{
+    if(!sb) return;
+    // Best-effort (table may not exist yet)
+    await sb.from('scheduled_run_logs').insert(entry);
+  }catch(e){
+    // ignore if table missing
+    console.warn('[scheduled_run_logs]', e.message);
+  }
+}
+
+
+async function showAutoRegisterNotification(items){
+  if(!items || !items.length) return;
+  const title = `FinTrack: ${items.length} programada(s) registrada(s) ✅`;
+  const body  = items.slice(0,3).map(i=>`• ${i.description} (${fmt(i.amount)})`).join('\n') + (items.length>3?`\n… +${items.length-3} outras`:'');
+  // Try Service Worker notification first (best on mobile/PWA)
+  try{
+    if('serviceWorker' in navigator){
+      const reg = await navigator.serviceWorker.getRegistration();
+      if(reg && reg.showNotification){
+        await reg.showNotification(title, { body, tag:'fintrack-autoreg', renotify:false });
+        return;
+      }
+    }
+  }catch(e){}
+  // Fallback to Notification API (in-page)
+  if(!('Notification' in window)) return;
+  if(Notification.permission === 'default'){
+    // Do not force prompt; keep user-driven via settings
+    return;
+  }
+  if(Notification.permission === 'granted'){
+    try{ new Notification(title, { body }); }catch(e){}
+  }
+}

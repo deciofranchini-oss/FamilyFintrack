@@ -84,38 +84,36 @@ function renderAccountsGrouped(accs,grid){
     if(ga.length)sections.push({g,accs:ga});
   });
   const ungrouped=accs.filter(a=>!a.group_id);
+  // Group bar
+  const bar=document.getElementById('accountsGroupBar');
+  if(bar){
+    bar.style.display='flex';
+    bar.innerHTML=state.groups.map(g=>{
+      const cnt=accs.filter(a=>a.group_id===g.id).length;
+      return `<button class="group-bar-btn" onclick="scrollToGroup('${g.id}')">${g.emoji||'🗂️'} ${esc(g.name)} <span class="group-bar-count">${cnt}</span></button>`;
+    }).join('')+(ungrouped.length?`<button class="group-bar-btn" onclick="scrollToGroup('__none__')">📂 Sem grupo</button>`:'');
+  }
   if(!sections.length&&!ungrouped.length){grid.innerHTML='<div class="empty-state"><div class="es-icon">🗂️</div><p>Nenhum grupo criado ainda.</p></div>';return;}
-
-  const groupHTML=sections.map(({g,accs:ga})=>{
+  grid.innerHTML=sections.map(({g,accs:ga})=>{
     const bal=ga.reduce((s,a)=>s+a.balance,0);
     const color=g.color||'var(--accent)';
-    const balClass=bal<0?'text-red':'text-accent';
-    const countLabel=ga.length===1?'1 conta':`${ga.length} contas`;
     return `<div class="account-group-section" id="grp-${g.id}">
-      <div class="account-group-header" style="border-left-color:${color}">
-        <span class="account-group-emoji">${g.emoji||'🗂️'}</span>
-        <span class="account-group-name">${esc(g.name)}</span>
-        <div class="account-group-meta">
-          <span class="account-group-count">${countLabel}</span>
-          <span class="account-group-balance ${balClass}">${fmt(bal)}</span>
-        </div>
+      <div class="account-group-header">
+        <span class="account-group-badge" style="background:${color}18">${g.emoji||'🗂️'}</span>
+        <span class="account-group-title">${esc(g.name)}</span>
+        <span class="account-group-sum ${bal<0?'text-red':''}" style="${bal<0?'color:var(--red)':'color:var(--accent)'}">${fmt(bal)}</span>
+        <span style="font-size:.75rem;color:var(--muted)">${ga.length} conta${ga.length>1?'s':''}</span>
       </div>
-      <div class="account-group-grid">${ga.map(a=>accountCardHTML(a)).join('')}</div>
+      <div class="account-grid" style="margin-top:0">${ga.map(a=>accountCardHTML(a)).join('')}</div>
     </div>`;
-  }).join('');
-
-  const ungroupedHTML=ungrouped.length?`<div class="account-group-section" id="grp-__none__">
-    <div class="account-group-header" style="border-left-color:var(--border2)">
-      <span class="account-group-emoji">📂</span>
-      <span class="account-group-name">Sem grupo</span>
-      <div class="account-group-meta">
-        <span class="account-group-count">${ungrouped.length===1?'1 conta':`${ungrouped.length} contas`}</span>
-      </div>
+  }).join('')+(ungrouped.length?`<div class="account-group-section" id="grp-__none__">
+    <div class="account-group-header">
+      <span class="account-group-badge" style="background:var(--border)">📂</span>
+      <span class="account-group-title">Sem grupo</span>
+      <span style="font-size:.75rem;color:var(--muted)">${ungrouped.length} conta${ungrouped.length>1?'s':''}</span>
     </div>
-    <div class="account-group-grid">${ungrouped.map(a=>accountCardHTML(a)).join('')}</div>
-  </div>`:'';
-
-  grid.innerHTML=groupHTML+ungroupedHTML;
+    <div class="account-grid" style="margin-top:0">${ungrouped.map(a=>accountCardHTML(a)).join('')}</div>
+  </div>`:'');
 }
 
 function scrollToGroup(id){const el=document.getElementById('grp-'+id);if(el)el.scrollIntoView({behavior:'smooth',block:'start'});}
@@ -276,6 +274,57 @@ async function deleteGroup(id){
   const{error}=await sb.from('account_groups').delete().eq('id',id);
   if(error){toast(error.message,'error');return;}
   toast('Grupo removido','success');
+  await loadGroups();
+  renderGroupManager();
+  await loadAccounts();
+  renderAccounts(_accountsViewMode);
+}
+
+function openGroupModal(id=''){
+  // Open the group management modal and optionally pre-fill for editing
+  document.getElementById('groupName').value='';
+  document.getElementById('groupEmoji').value='';
+  const colorEl=document.getElementById('groupColor');
+  if(colorEl)colorEl.value='#2a6049';
+  document.getElementById('groupEditId').value='';
+  if(id){
+    const g=state.groups.find(x=>x.id===id);
+    if(g){
+      document.getElementById('groupName').value=g.name||'';;
+      document.getElementById('groupEmoji').value=g.emoji||'';;
+      if(colorEl)colorEl.value=g.color||'#2a6049';
+      document.getElementById('groupEditId').value=id;
+    }
+  }
+  openModal('groupModal');
+  renderGroupManager();
+}
+
+function cancelGroupEdit(){
+  document.getElementById('groupName').value='';
+  document.getElementById('groupEmoji').value='';
+  const colorEl=document.getElementById('groupColor');
+  if(colorEl)colorEl.value='#2a6049';
+  document.getElementById('groupEditId').value='';
+}
+
+async function saveGroup(){
+  const id=document.getElementById('groupEditId').value;
+  const colorEl=document.getElementById('groupColor');
+  const data={
+    name:document.getElementById('groupName').value.trim(),
+    emoji:document.getElementById('groupEmoji').value||'🗂️',
+    color:colorEl?colorEl.value:'#2a6049',
+    updated_at:new Date().toISOString()
+  };
+  if(!data.name){toast('Informe o nome do grupo','error');return;}
+  if(!id)data.family_id=famId();
+  let err;
+  if(id){({error:err}=await sb.from('account_groups').update(data).eq('id',id));}
+  else{({error:err}=await sb.from('account_groups').insert(data));}
+  if(err){toast(err.message,'error');return;}
+  toast('Grupo salvo!','success');
+  cancelGroupEdit();
   await loadGroups();
   renderGroupManager();
   await loadAccounts();

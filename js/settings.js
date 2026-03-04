@@ -1,4 +1,24 @@
-let _appSettingsCache = null; // in-memory cache after first load
+let _appSettingsCache = null;
+
+// ── Helpers: sanitize values coming from storage/DB ─────────────────────────
+async function resolveMaybePromise(v){
+  try{
+    if(v && typeof v === 'object' && typeof v.then === 'function'){
+      return await v;
+    }
+  }catch(e){}
+  return v;
+}
+
+async function sanitizeLogoUrl(v){
+  v = await resolveMaybePromise(v);
+  if(v === null || v === undefined) return '';
+  if(typeof v !== 'string') v = String(v);
+  const bad = v.includes('[object Promise]') || v.trim()==='[object Promise]' || v.trim()==='undefined';
+  if(bad) return '';
+  return v.trim();
+}
+ // in-memory cache after first load
 
 async function loadAppSettings() {
   if (!sb) return;
@@ -7,6 +27,19 @@ async function loadAppSettings() {
     if (error) throw error;
     _appSettingsCache = {};
     (data || []).forEach(row => { _appSettingsCache[row.key] = row.value; });
+    // Apply logo override (if any) - sanitize to avoid '[object Promise]' corruption
+let logoRaw = (_appSettingsCache && _appSettingsCache['app_logo_url']) || localStorage.getItem('app_logo_url');
+const logo = await sanitizeLogoUrl(logoRaw);
+if(!logo && logoRaw && String(logoRaw).includes('[object Promise]')){
+  try{ localStorage.removeItem('app_logo_url'); }catch(e){}
+}
+if (logo && typeof setAppLogo === 'function') setAppLogo(logo);
+
+
+    // Apply menu visibility (if configured)
+    try { applyMenuVisibility(_getMenuVisibilityFromCache()); } catch {}
+
+
     // Hydrate EmailJS config
     EMAILJS_CONFIG.serviceId  = _appSettingsCache['ej_service']  || localStorage.getItem('ej_service')  || '';
     EMAILJS_CONFIG.templateId = _appSettingsCache['ej_template'] || localStorage.getItem('ej_template') || '';
@@ -29,6 +62,9 @@ async function loadAppSettings() {
 }
 
 async function saveAppSetting(key, value) {
+  value = await resolveMaybePromise(value);
+  if(key==='app_logo_url' && value && typeof value!=='string') value = String(value);
+  if(key==='app_logo_url' && value && String(value).includes('[object Promise]')) value = '';
   // Always persist locally as fallback
   if (typeof value === 'object') {
     try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
@@ -49,7 +85,11 @@ async function saveAppSetting(key, value) {
 }
 
 async function getAppSetting(key, defaultValue = null) {
-  if (_appSettingsCache && key in _appSettingsCache) return _appSettingsCache[key];
+  if (_appSettingsCache && key in _appSettingsCache) {
+    const v = _appSettingsCache[key];
+    if(key==='app_logo_url' && v && String(v).includes('[object Promise]')) return '';
+    return v;
+  }
   // Fallback localStorage
   const local = localStorage.getItem(key);
   if (local !== null) {
@@ -137,9 +177,9 @@ async function testEmailJSConnection() {
       ? svc : (currentUser?.email || 'teste@fintrack.app');
     await emailjs.send(svc, tpl, {
       to_email:       testEmail,
-      from_name:      'J.F. Family FinTrack',
+      from_name:      'Family FinTrack',
       subject:        'FinTrack — Teste de conexão ✅',
-      message:        'Este é um e-mail de teste enviado pelo JF Family FinTrack para confirmar que a configuração do EmailJS está correta. Se recebeu este e-mail, está tudo funcionando!',
+      message:        'Este é um e-mail de teste enviado pelo Family FinTrack para confirmar que a configuração do EmailJS está correta. Se recebeu este e-mail, está tudo funcionando!',
       report_period:  'Teste — ' + new Date().toLocaleDateString('pt-BR'),
       report_view:    'Teste de conexão',
       report_income:  'R$ 1.000,00',
@@ -417,10 +457,281 @@ function loadSettings() {
   const tl = document.getElementById('topbarLogoImg');
   const pt = document.getElementById('pageTitle');
   if(tl && pt) { tl.style.display='none'; pt.style.display=''; }
+  // Admin-only logo section
+  if(typeof initLogoSettings==='function') initLogoSettings();
 }
+
 
 
 /* ══════════════════════════════════════════════════════════════════
    IMPORT ENGINE v3 — Rebuilt from scratch
    Supports: MoneyWiz, Nubank, Inter, Itaú, XP, Generic CSV/XLSX
 ══════════════════════════════════════════════════════════════════ */
+
+
+let _pendingLogoFile = null;
+
+function initLogoSettings() {
+  // Admin-only section: show/hide
+  const isAdmin = (currentUser?.role==='admin' || currentUser?.can_admin);
+  const sec = document.getElementById('logoSettingsSection');
+  if(sec) sec.style.display = isAdmin ? '' : 'none';
+  if(!isAdmin) return;
+
+  const urlEl = document.getElementById('appLogoUrl');
+  const fileEl = document.getElementById('appLogoFile');
+  const previewEl = document.getElementById('appLogoPreview');
+
+  const cur = getAppSetting('app_logo_url','');
+  if(urlEl && cur) urlEl.value = cur;
+  if(previewEl && cur) previewEl.src = cur;
+
+  if(fileEl) {
+    fileEl.onchange = async () => {
+      const f = fileEl.files && fileEl.files[0];
+      if(!f) return;
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const dataUrl = reader.result;
+        _pendingLogoFile = f;
+        // Keep preview, but do not rely on DataURL as persisted logo (use Supabase Storage on save)
+        if(urlEl) urlEl.value = '';
+        if(previewEl) previewEl.src = dataUrl;
+      };
+      reader.readAsDataURL(f);
+    };
+  }
+}
+
+
+async function uploadLogoToStorage(file){
+  if(!sb) throw new Error('Supabase não configurado');
+  const BUCKET = 'fintrack-attachments'; // reuse existing public bucket
+  const fam = currentUser?.family_id ? String(currentUser.family_id) : 'global';
+  const ext = (file.name && file.name.includes('.')) ? file.name.split('.').pop().toLowerCase() : 'png';
+  const path = `app/logo/${fam}/logo.${ext}`;
+  const { error: upErr } = await sb.storage.from(BUCKET).upload(path, file, { upsert:true, contentType: file.type || 'image/png' });
+  if(upErr) throw upErr;
+  const { data: urlData } = sb.storage.from(BUCKET).getPublicUrl(path);
+  const publicUrl = urlData?.publicUrl;
+  if(!publicUrl) throw new Error('Não foi possível obter a URL pública do logotipo');
+  return publicUrl;
+}
+
+async function saveAppLogo() {
+  const isAdmin = (currentUser?.role==='admin' || currentUser?.can_admin);
+  if(!isAdmin) { toast('Apenas admin pode alterar o logotipo','warning'); return; }
+
+  try{
+    let finalUrl = '';
+    // Prefer upload (ensures logo is shared across devices)
+    if(_pendingLogoFile){
+      finalUrl = await uploadLogoToStorage(_pendingLogoFile);
+      _pendingLogoFile = null;
+    } else {
+      const urlEl = document.getElementById('appLogoUrl');
+      const val = (urlEl?.value || '').trim();
+      if(!val) { toast('Selecione um arquivo ou informe uma URL','warning'); return; }
+      finalUrl = val;
+    }
+
+    finalUrl = await sanitizeLogoUrl(finalUrl);
+if(!finalUrl){ toast('URL do logotipo inválida. Tente novamente.','error'); return; }
+await saveAppSetting('app_logo_url', finalUrl);
+if(typeof setAppLogo === 'function') setAppLogo(finalUrl);
+
+    const previewEl = document.getElementById('appLogoPreview');
+    if(previewEl) previewEl.src = finalUrl;
+    toast('Logotipo atualizado (sincronizado)','success');
+  }catch(e){
+    const msg = (e && e.message) ? e.message : String(e);
+    toast('Erro ao salvar logotipo: '+msg,'error');
+    // Hint if bucket missing
+    if((msg||'').toLowerCase().includes('bucket') || (msg||'').toLowerCase().includes('not found')){
+      toast('Dica: crie/torne público o bucket fintrack-attachments no Supabase Storage','warning');
+    }
+  }
+}
+
+
+async function resetAppLogo() {
+  const isAdmin = (currentUser?.role==='admin' || currentUser?.can_admin);
+  if(!isAdmin) { toast('Apenas admin pode alterar o logotipo','warning'); return; }
+
+  await saveAppSetting('app_logo_url', '');
+  if(typeof setAppLogo === 'function') setAppLogo('');
+  const urlEl = document.getElementById('appLogoUrl');
+  const previewEl = document.getElementById('appLogoPreview');
+  if(urlEl) urlEl.value = '';
+  if(previewEl) previewEl.src = APP_APP_LOGO_URL || DEFAULT_APP_LOGO_URL;
+  toast('Logotipo restaurado','success');
+}
+
+
+// ─────────────────────────────────────────────
+// User Preferences (per screen)
+// ─────────────────────────────────────────────
+function _prefKey(screen, key){
+  const uid = currentUser?.id || 'local';
+  return `pref_${uid}_${screen}_${key}`;
+}
+
+function getUserPreference(screen, key){
+  try{
+    const raw = localStorage.getItem(_prefKey(screen,key));
+    if(raw===null || raw===undefined) return null;
+    return raw==='true' ? true : raw==='false' ? false : raw;
+  }catch(e){ return null; }
+}
+
+async function setUserPreference(screen, key, value){
+  try{ localStorage.setItem(_prefKey(screen,key), String(value)); }catch(e){}
+  // Best-effort persistence in DB (optional)
+  try{
+    if(!sb || !currentUser?.id) return;
+    const prefs = {};
+    prefs[key]=value;
+    await sb.from('user_preferences').insert({
+      user_id: currentUser.id,
+      screen,
+      preferences: prefs,
+      created_at: new Date().toISOString()
+    });
+  }catch(e){
+    // ignore if table missing / RLS blocks
+  }
+}
+
+function loadTxCompactPreference(){
+  const el = document.getElementById('txCompactToggle');
+  let pref = null;
+  try{ if(typeof getUserPreference==='function') pref = getUserPreference('transactions','compact_view'); }catch(e){}
+  const isCompact = pref===true || pref==='true' || localStorage.getItem('tx_compact_view')==='1';
+  if(el) el.checked = !!isCompact;
+  document.body.classList.toggle('tx-compact', !!isCompact);
+  const btn = document.getElementById('compactToggleBtn');
+  if(btn) btn.classList.toggle('is-active', !!isCompact);
+}
+
+async function saveTxCompactPreference(){
+  const el = document.getElementById('txCompactToggle');
+  const isCompact = !!el?.checked;
+  localStorage.setItem('tx_compact_view', isCompact ? '1':'0');
+  await setUserPreference('transactions','compact_view', isCompact);
+  loadTxCompactPreference();
+  // Re-render if on transactions/dashboard
+  try{
+    if(state.currentPage==='transactions') renderTransactions();
+    if(state.currentPage==='dashboard') loadDashboardRecent();
+  }catch(e){}
+}
+
+
+// ── Menu Visibility (admin configurable) ───────────────────────────────
+const DEFAULT_MENU_VISIBILITY = {
+  dashboard: true,
+  transactions: true,
+  accounts: true,
+  reports: true,
+  budgets: true,
+  scheduled: true,
+  categories: true,
+  payees: true,
+  import: true,
+  audit: true,
+  settings: true
+};
+
+function _getMenuVisibilityFromCache() {
+  // app_settings key
+  let v = (_appSettingsCache && _appSettingsCache['menu_visibility']) || null;
+  if (!v) {
+    // fallback localStorage
+    const raw = localStorage.getItem('menu_visibility');
+    if (raw) { try { v = JSON.parse(raw); } catch {} }
+  }
+  if (!v || typeof v !== 'object') v = {};
+  return { ...DEFAULT_MENU_VISIBILITY, ...v };
+}
+
+function applyMenuVisibility(vis) {
+  if (!vis || typeof vis !== 'object') vis = _getMenuVisibilityFromCache();
+  const map = {
+    dashboard: 'dashboardNav',
+    transactions: 'transactionsNav',
+    accounts: 'accountsNav',
+    reports: 'reportsNav',
+    budgets: 'budgetsNav',
+    scheduled: 'scheduledNav',
+    categories: 'categoriesNav',
+    payees: 'payeesNav',
+    import: 'importNav',
+    audit: 'auditNav',
+    settings: 'settingsNav',
+  };
+  Object.keys(map).forEach(key => {
+    const el = document.getElementById(map[key]);
+    if (!el) return;
+    // Do not show admin-only items to non-admin even if enabled
+    if ((key === 'audit' || key === 'settings') && currentUser?.role !== 'admin') {
+      el.style.display = 'none';
+      return;
+    }
+    el.style.display = vis[key] ? '' : 'none';
+  });
+}
+
+function _renderMenuVisibilityForm() {
+  const wrap = document.getElementById('menuVisibilityForm');
+  const hint = document.getElementById('menuVisibilityHint');
+  if (!wrap) return;
+  const vis = _getMenuVisibilityFromCache();
+
+  const items = [
+    ['dashboard',   'Dashboard'],
+    ['transactions','Transações'],
+    ['accounts',    'Contas'],
+    ['reports',     'Relatórios'],
+    ['budgets',     'Orçamentos'],
+    ['scheduled',   'Programados'],
+    ['categories',  'Categorias'],
+    ['payees',      'Beneficiários'],
+    ['import',      'Importar'],
+    ['audit',       'Auditoria (admin)'],
+    ['settings',    'Configurações (admin)'],
+  ];
+
+  wrap.innerHTML = items.map(([key,label]) => {
+    const checked = vis[key] ? 'checked' : '';
+    const disabled = (key==='audit' || key==='settings') ? '' : '';
+    return `<label style="display:flex;gap:8px;align-items:center;padding:8px 10px;border:1px solid var(--border);border-radius:12px;background:var(--bg2)">
+      <input type="checkbox" id="mv_${key}" ${checked} ${disabled} style="transform:scale(1.1)">
+      <span style="font-size:.95rem">${label}</span>
+    </label>`;
+  }).join('');
+
+  if (hint) hint.textContent = 'Dica: se você ocultar uma página, ainda poderá acessá-la via URL/atalhos internos, mas ela não aparece no menu.';
+}
+
+async function saveMenuVisibility() {
+  const vis = {};
+  Object.keys(DEFAULT_MENU_VISIBILITY).forEach(k => {
+    const cb = document.getElementById('mv_' + k);
+    if (cb) vis[k] = !!cb.checked;
+  });
+  await saveAppSetting('menu_visibility', vis);
+  // refresh cache and apply
+  if (!_appSettingsCache) _appSettingsCache = {};
+  _appSettingsCache['menu_visibility'] = vis;
+  applyMenuVisibility(vis);
+  toast('Menu atualizado ✓', 'success');
+}
+
+async function resetMenuVisibility() {
+  await saveAppSetting('menu_visibility', DEFAULT_MENU_VISIBILITY);
+  if (!_appSettingsCache) _appSettingsCache = {};
+  _appSettingsCache['menu_visibility'] = DEFAULT_MENU_VISIBILITY;
+  _renderMenuVisibilityForm();
+  applyMenuVisibility(DEFAULT_MENU_VISIBILITY);
+  toast('Menu restaurado ✓', 'success');
+}
