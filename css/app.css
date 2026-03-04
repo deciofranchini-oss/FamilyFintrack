@@ -1405,3 +1405,12 @@ body{ font-family: var(--sf); text-rendering: optimizeLegibility; -webkit-font-s
   #page-reports .grid-2{ display:grid; grid-template-columns: 1fr !important; gap: 12px; }
   #page-reports canvas{ max-width:100%; height:auto; }
 }
+
+
+/* Reports mobile visibility (no-regression patch) */
+#page-reports { overflow-y: auto; padding-bottom: 120px; }
+@media (max-width: 720px){
+  #page-reports .grid-2 { grid-template-columns: 1fr !important; }
+  #page-reports .card { overflow: visible; }
+  #page-reports canvas { max-width: 100%; }
+}
