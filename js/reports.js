@@ -72,7 +72,7 @@ function loadCurrentReport() {
 }
 
 /* ── Fetch filtered transactions ── */
-async async function fetchRptTransactions() {
+async function fetchRptTransactions() {
   const {from, to} = getRptDateRange();
   const accId  = document.getElementById('rptAccount')?.value   || '';
   const typeV  = document.getElementById('rptType')?.value      || '';
@@ -116,13 +116,7 @@ function _rptTopCompositionLines(catMap, total) {
   return lines;
 }
 
-async async function loadReports() {
-  if(!window.Chart){
-    const el=document.getElementById('reportsError');
-    if(el) el.textContent='Chart.js não carregou. Verifique conexão/cache.';
-    return;
-  }
-
+async function loadReports() {
   const {from, to} = getRptDateRange();
   const txs  = await fetchRptTransactions();
   rptState.txData = txs;
