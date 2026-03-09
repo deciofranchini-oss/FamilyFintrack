@@ -44,6 +44,56 @@ const SOURCE_PRESETS = {
     fields: { date:'Data', description:'Descrição / Produto', amount:'Movimentação', type_col:'Tipo' },
     accountName: 'XP Investimentos',
   },
+  ofx: {
+    label: 'Extrato Bancário (OFX/CSV)',
+    fields: { date:'Data', description:'Descrição', amount:'Valor', type_col:'Tipo' },
+    amountInvert: false,
+  },
+  bradesco: {
+    label: 'Bradesco',
+    fields: { date:'Data', description:'Histórico', amount:'Valor', type_col:'Natureza' },
+    accountName: 'Bradesco',
+  },
+  santander: {
+    label: 'Santander',
+    fields: { date:'Data', description:'Descrição', amount:'Valor' },
+    accountName: 'Santander',
+  },
+  bb: {
+    label: 'Banco do Brasil',
+    fields: { date:'Data', description:'Histórico', amount_credit:'Crédito(R$)', amount_debit:'Débito(R$)' },
+    accountName: 'Banco do Brasil',
+  },
+  caixa: {
+    label: 'Caixa Econômica',
+    fields: { date:'Data', description:'Descrição', amount:'Valor' },
+    accountName: 'Caixa Econômica Federal',
+  },
+  c6bank: {
+    label: 'C6 Bank',
+    fields: { date:'Data', description:'Descrição', amount:'Valor' },
+    accountName: 'C6 Bank', amountInvert: true,
+  },
+  picpay: {
+    label: 'PicPay',
+    fields: { date:'Data', description:'Descrição', amount:'Valor' },
+    accountName: 'PicPay', amountInvert: true,
+  },
+  mercadopago: {
+    label: 'Mercado Pago',
+    fields: { date:'Data', description:'Descrição', amount:'Valor' },
+    accountName: 'Mercado Pago',
+  },
+  pagbank: {
+    label: 'PagBank',
+    fields: { date:'Data', description:'Descrição', amount:'Valor' },
+    accountName: 'PagBank',
+  },
+  sicoob: {
+    label: 'Sicoob',
+    fields: { date:'Data', description:'Histórico', amount:'Valor', type_col:'Tipo' },
+    accountName: 'Sicoob',
+  },
 };
 
 const FINTRACK_FIELDS = [
@@ -65,20 +115,30 @@ const FINTRACK_FIELDS = [
 
 /* ─── Wizard navigation ─── */
 function goToStep(n) {
+  // Hide all panels first
   ['importStep1','colMapperScreen','fieldMapScreen','importProgress','importStagingArea'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';
   });
+  // Log is always visible when import is in progress
+  const logEl = document.getElementById('importLog');
+
   document.querySelectorAll('.import-wizard-step').forEach((el,i) => {
     el.classList.remove('active','done');
     if (i+1 < n) el.classList.add('done');
     else if (i+1 === n) el.classList.add('active');
   });
-  if (n === 1) document.getElementById('importStep1').style.display = '';
-  else if (n === 2) document.getElementById('colMapperScreen').style.display = '';
-  else if (n === 3) {
-    document.getElementById('importProgress').style.display = '';
-    document.getElementById('importStagingArea').style.display = 'none';
+
+  if (n === 1) {
+    if (document.getElementById('importStep1')) document.getElementById('importStep1').style.display = '';
+    if (logEl) logEl.style.display = 'none';  // hide log on step 1
+  } else if (n === 2) {
+    if (document.getElementById('colMapperScreen')) document.getElementById('colMapperScreen').style.display = 'block';
+    if (logEl) logEl.style.display = 'none';  // hide log on mapper step
+  } else if (n === 3) {
+    if (document.getElementById('importProgress')) document.getElementById('importProgress').style.display = '';
+    if (document.getElementById('importStagingArea')) document.getElementById('importStagingArea').style.display = 'none';
+    if (logEl) logEl.style.display = '';  // show log during import
   }
 }
 
@@ -102,6 +162,11 @@ function importDrop(e) { e.preventDefault(); importDragLeave(); const f = e.data
 function importFileSelected(e) { const f = e.target.files[0]; if (f) loadImportFile(f); }
 
 function initImportPage() {
+  // Reset wizard to step 1 — hide all other panels
+  goToStep(1);
+  const logEl = document.getElementById('importLog');
+  if (logEl) logEl.style.display = '';
+
   const sel = document.getElementById('importAccountFilter');
   if (sel) {
     sel.innerHTML = '<option value="">— Detectar automaticamente —</option>' +
@@ -121,6 +186,14 @@ async function loadImportFile(file) {
       const text = await file.text();
       rows = parseCsvToRows(text);
       importLogMsg('ok', `✓ ${rows.length} linhas (CSV)`);
+    } else if (ext.endsWith('.ofx') || ext.endsWith('.qfx')) {
+      const text = await file.text();
+      rows = parseOfxToRows(text);
+      importLogMsg('ok', `✓ ${rows.length} transações (OFX)`);
+      // OFX já tem preset forçado
+      importState.sourcePreset = 'ofx';
+      document.querySelectorAll('.source-chip').forEach(el => el.classList.remove('active'));
+      document.getElementById('chip-ofx')?.classList.add('active');
     } else {
       const buf = await file.arrayBuffer();
       const wb  = XLSX.read(buf, { type:'array', raw:false });
@@ -133,18 +206,61 @@ async function loadImportFile(file) {
     document.getElementById('importDropTitle').textContent = '✓ ' + file.name;
     document.getElementById('importDropSub').textContent = `${rows.length} linhas carregadas`;
     document.getElementById('importProgress').style.display = 'none';
+
+    // ── Análise com IA (assíncrona, não-bloqueante para a UI) ─────────────
     detectHeaderRow();
     buildColMapperUI();
+
     const preset = SOURCE_PRESETS[importState.sourcePreset] || SOURCE_PRESETS.generic;
     if (preset.isMoneywiz) {
+      // MoneyWiz: pular IA e avançar direto
+      importLogMsg('info', '⚡ MoneyWiz detectado — importando diretamente...');
+      await proceedFromColMapper();
+    } else if (ext.endsWith('.ofx') || ext.endsWith('.qfx')) {
+      // OFX: estrutura já conhecida, avançar direto
       await proceedFromColMapper();
     } else {
+      // CSV/XLSX genérico: tentar IA primeiro
       goToStep(2);
+      importLogMsg('info', '🤖 Iniciando análise inteligente do arquivo...');
+      const autoAdvance = await runImportAIPipeline(file, rows);
+      if (autoAdvance) {
+        importLogMsg('ok', '✓ Formato identificado com alta confiança — avançando automaticamente');
+        await proceedFromColMapper();
+      } else {
+        importLogMsg('info', '📋 Revise o mapeamento de colunas e clique em "Analisar & Prévia"');
+      }
     }
   } catch(err) {
     importLogMsg('err', '✗ ' + err.message);
     console.error(err);
   }
+}
+
+/* ─── OFX / QFX parser ─── */
+function parseOfxToRows(text) {
+  // Suporta OFX SGML clássico e OFX/QFX XML
+  const rows = [['Data', 'Descrição', 'Valor', 'Tipo', 'ID']];
+  const txRegex = /<STMTTRN>([\s\S]*?)<\/STMTTRN>/gi;
+  let match;
+  while ((match = txRegex.exec(text)) !== null) {
+    const block = match[1];
+    const get   = tag => { const m = block.match(new RegExp(`<${tag}>([^<\r\n]+)`, 'i')); return m ? m[1].trim() : ''; };
+    const dtraw = get('DTPOSTED') || get('DTUSER');
+    const date  = dtraw ? dtraw.slice(0,8).replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3') : '';
+    const amt   = get('TRNAMT');
+    const name  = get('NAME') || get('MEMO') || get('PAYEE');
+    const memo  = get('MEMO');
+    const ttype = get('TRNTYPE');
+    const fitid = get('FITID');
+    if (date && amt) rows.push([date, name || memo, amt, ttype, fitid]);
+  }
+  // Fallback: se não achou tags XML, tentar como CSV com campos OFX flat
+  if (rows.length <= 1) {
+    // Tentar parsear como CSV normal
+    return parseCsvToRows(text);
+  }
+  return rows;
 }
 
 /* ─── CSV Parser ─── */
@@ -447,7 +563,7 @@ async function proceedFromColMapper() {
     setImportProgress(50, 'Preparando revisão...');
     showFieldMapScreen(parsedData);
     document.getElementById('importProgress').style.display = 'none';
-    document.getElementById('fieldMapScreen').style.display = '';
+    document.getElementById('fieldMapScreen').style.display = 'block';
     document.getElementById('importStagingArea').style.display = 'none';
     document.querySelectorAll('.import-wizard-step').forEach((el,i) => {
       el.classList.remove('active','done');
@@ -527,7 +643,9 @@ function parseGenericRows(rows, headerIdx, colMap, preset) {
 
     const cat       = get(row, 'category');
     const desc      = get(row, 'description') || get(row, 'memo') || '';
-    const payeeName = get(row, 'payee') || (desc ? null : null);
+    // Use explicit payee column if mapped; otherwise fall back to description
+    // (bank exports like Nubank/Inter/Itaú put the counterpart name in description)
+    const payeeName = get(row, 'payee') || desc || null;
     const currency  = get(row, 'currency') || 'BRL';
     const xfer      = get(row, 'transfer_account');
     const memo      = get(row, 'memo');
@@ -590,7 +708,7 @@ function parseMoneyWizRows(rows) {
       if (xfer) transferAccounts.add(xfer);
       const tx = {
         account_name:accName, transfer_account:xfer||null, description:desc,
-        payee_name:pay||null, category_path:cat||null, date:dt, time:tm,
+        payee_name:pay||desc||null, category_path:cat||null, date:dt, time:tm,
         memo:clean(r[9])||null, amount:amt, currency:curr, is_transfer:!!xfer,
         import_key:`${accName}|${dt}|${amt.toFixed(2)}|${desc}`,
       };
@@ -850,14 +968,17 @@ async function stageTransactions(allTx, out) {
     if (mode === 'new') {
       for (const acc of (state.accounts||[])) {
         const { data } = await sb.from('transactions').select('date')
-          .eq('account_id', acc.id).order('date',{ascending:false}).limit(1);
+          .eq('account_id', acc.id)
+          .eq('family_id', famId())
+          .order('date',{ascending:false}).limit(1);
         if (data?.length) cutoffs[acc.name.toLowerCase()] = data[0].date;
       }
     } else if (mode === 'update') {
-      // Check if import_key column exists by trying to select it
       const { data, error } = await sb.from('transactions').select('import_key').limit(1);
       if (!error) {
-        const { data: allKeys } = await sb.from('transactions').select('import_key').not('import_key','is',null);
+        const { data: allKeys } = await sb.from('transactions').select('import_key')
+          .eq('family_id', famId())
+          .not('import_key','is',null);
         (allKeys||[]).forEach(r => exKeys.add(r.import_key));
       }
     }
@@ -976,7 +1097,7 @@ async function commitImport() {
       // First: top-level
       for (const cat of toC.filter(c => !c.parentName)) {
         const { data, error } = await sb.from('categories')
-          .insert({ name: cat.name, type: cat.type || 'despesa', icon: '📦', color: '#2a6049' })
+          .insert({ family_id: famId(), name: cat.name, type: cat.type || 'despesa', icon: '📦', color: '#2a6049' })
           .select('id,name').single();
         if (data) pIds[cat.name.toLowerCase()] = data.id;
         else if (error) importLogMsg('err', `Cat "${cat.name}": ${error.message}`);
@@ -1007,6 +1128,33 @@ async function commitImport() {
       }
       importLogMsg('ok', `✓ ${toC.length} beneficiários criados`);
       await loadPayees();
+    }
+
+    // 3b. Auto-create payees referenced in transactions but not yet in DB
+    //     (covers sec==='transactions' only, and description-based payees from bank exports)
+    if (sec === 'all' || sec === 'transactions') {
+      setImportProgress(50, 'Verificando beneficiários...');
+      await loadPayees(); // refresh before check
+      const exPay = new Set((state.payees||[]).map(p => p.name.toLowerCase()));
+      const txPayees = new Map(); // name.lower → original name
+      for (const tx of s.transactions) {
+        if (!tx.payee_name) continue;
+        const lower = tx.payee_name.toLowerCase();
+        if (!exPay.has(lower) && !txPayees.has(lower))
+          txPayees.set(lower, tx.payee_name.replace(/\xa0/g,' ').trim());
+      }
+      if (txPayees.size > 0) {
+        const newPayees = [...txPayees.values()].filter(n => n.length > 0);
+        importLogMsg('info', `Auto-criando ${newPayees.length} beneficiário(s) das transações...`);
+        for (let i = 0; i < newPayees.length; i += 100) {
+          const normFn = typeof normalizePayeeName === 'function' ? normalizePayeeName : n => n;
+          const batch = newPayees.slice(i, i+100).map(name => ({ name: normFn(name), family_id: famId() }));
+          const { error } = await sb.from('payees').insert(batch);
+          if (error) importLogMsg('warn', `Payees auto-create: ${error.message}`);
+        }
+        await loadPayees();
+        importLogMsg('ok', `✓ ${newPayees.length} beneficiário(s) criado(s) automaticamente`);
+      }
     }
 
     // 4. Import transactions
@@ -1157,9 +1305,12 @@ function cancelImport() {
   document.getElementById('importDropSub').textContent = 'Suporta CSV, XLSX, XLS — qualquer formato';
   document.getElementById('importProgress').style.display = 'none';
   const log = document.getElementById('importLog');
-  if (log) log.innerHTML = '';
+  if (log) { log.innerHTML = ''; log.style.display = ''; }
   showStagingArea(false);
   goToStep(1);
+  // Make sure importStep1 is visible and col mapper is hidden
+  const step1 = document.getElementById('importStep1');
+  if (step1) step1.style.display = '';
 }
 
 /* ─── Progress / Log helpers ─── */

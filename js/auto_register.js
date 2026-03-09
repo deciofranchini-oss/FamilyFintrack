@@ -272,6 +272,23 @@ async function runAutoRegister(manual=false) {
       return;
     }
 
+
+    // Preload destination account info for transfers (name, currency needed for FX)
+    try {
+      const toIds = [...new Set((schedList||[]).map(s => s.transfer_to_account_id).filter(Boolean))];
+      if(toIds.length) {
+        const { data: toAccs } = await sb.from('accounts').select('id,name,currency').in('id', toIds);
+        const map = {};
+        (toAccs||[]).forEach(a => { map[a.id] = a; });
+        (schedList||[]).forEach(s => {
+          if(s.transfer_to_account_id && map[s.transfer_to_account_id]) {
+            s.transfer_to_account_name     = map[s.transfer_to_account_id].name || '-';
+            s.transfer_to_account_currency = map[s.transfer_to_account_id].currency || null;
+          }
+        });
+      }
+    } catch(e) { /* ignore */ }
+
     let totalRegistered = 0;
     let totalNotified = 0;
 
@@ -288,14 +305,43 @@ async function runAutoRegister(manual=false) {
 
         if(existing) continue; // already done
 
-        // Create the transaction
-        const isAutoTransfer = sc.type === 'transfer' || sc.type === 'card_payment';
+        // ── Build amounts ──────────────────────────────────────────────────────
+        const isAutoTransfer   = sc.type === 'transfer' || sc.type === 'card_payment';
+        const isAutoCurrencyFx = isAutoTransfer && sc.fx_mode && sc.transfer_to_account_currency &&
+                                 sc.accounts?.currency !== sc.transfer_to_account_currency;
         const txAmt = (sc.type === 'expense' || isAutoTransfer) ? -Math.abs(sc.amount) : Math.abs(sc.amount);
-        const { data: newTx, error: txErr } = await sb.from('transactions').insert({ family_id: famId(),
+
+        // Compute paired (destination) amount with FX when currencies differ
+        let pairedAmt = Math.abs(sc.amount); // default 1:1
+        if (isAutoCurrencyFx) {
+          if (sc.fx_mode === 'fixed' && sc.fx_rate > 0) {
+            // Use stored fixed rate
+            pairedAmt = Math.abs(sc.amount) * parseFloat(sc.fx_rate);
+          } else if (sc.fx_mode === 'api') {
+            // Fetch live rate from Frankfurter API for the registration date
+            try {
+              const srcCur = sc.accounts.currency;
+              const dstCur = sc.transfer_to_account_currency;
+              const apiDate = date <= new Date().toISOString().slice(0,10) ? date : new Date().toISOString().slice(0,10);
+              const fxRes = await fetch(`https://api.frankfurter.app/${apiDate}?base=${srcCur}&to=${dstCur}`);
+              if (fxRes.ok) {
+                const fxJson = await fxRes.json();
+                const rate = fxJson?.rates?.[dstCur];
+                if (rate > 0) pairedAmt = Math.abs(sc.amount) * rate;
+              }
+            } catch(fxErr) {
+              console.warn('[AutoReg] FX API failed, using 1:1:', fxErr.message);
+            }
+          }
+        }
+
+        // ── Insert debit leg (origin account) ──────────────────────────────
+        const { data: newTx, error: txErr } = await sb.from('transactions').insert({
+          family_id:   famId(),
           account_id:  sc.account_id,
           description: sc.description,
           amount:      txAmt,
-          date:        date,
+          date,
           category_id: sc.category_id || null,
           payee_id:    isAutoTransfer ? null : (sc.payee_id || null),
           memo:        sc.memo ? `[Auto] ${sc.memo}` : '[Registro automático]',
@@ -306,16 +352,51 @@ async function runAutoRegister(manual=false) {
 
         if(txErr) { console.error('[AutoReg] Tx error:', txErr.message); continue; }
 
-        // Update account balance
-        const newBal = (parseFloat(sc.accounts?.balance)||0) + txAmt;
-        await sb.from('accounts').update({ balance: newBal }).eq('id', sc.account_id);
+        // ── Insert credit leg (destination account) for transfers ───────────
+        if (isAutoTransfer && sc.transfer_to_account_id) {
+          let pairedResult, pairedErr;
+          ({data: pairedResult, error: pairedErr} = await sb.from('transactions').insert({
+            family_id:   famId(),
+            account_id:  sc.transfer_to_account_id,
+            description: sc.description,
+            amount:      pairedAmt,  // positive credit, FX-converted if needed
+            date,
+            category_id: sc.category_id || null,
+            payee_id:    null,
+            memo:        sc.memo ? `[Auto] ${sc.memo}` : '[Registro automático]',
+            is_transfer: true,
+            is_card_payment: sc.type === 'card_payment',
+            transfer_to_account_id: sc.account_id,
+            linked_transfer_id: newTx.id,
+          }).select().single());
+
+          if (pairedErr && pairedErr.message?.includes('linked_transfer_id')) {
+            // Fallback: insert without linked_transfer_id if column not migrated yet
+            await sb.from('transactions').insert({
+              family_id:   famId(),
+              account_id:  sc.transfer_to_account_id,
+              description: sc.description,
+              amount:      pairedAmt,
+              date,
+              category_id: sc.category_id || null,
+              payee_id:    null,
+              memo:        sc.memo ? `[Auto] ${sc.memo}` : '[Registro automático]',
+              is_transfer: true,
+              is_card_payment: sc.type === 'card_payment',
+              transfer_to_account_id: sc.account_id,
+            });
+          } else if (pairedResult?.id) {
+            // Back-link origin to paired
+            await sb.from('transactions').update({ linked_transfer_id: pairedResult.id }).eq('id', newTx.id);
+          }
+        }
 
         // Mark occurrence as registered
         await sb.from('scheduled_occurrences').upsert({
-          scheduled_id:  sc.id,
+          scheduled_id:   sc.id,
           scheduled_date: date,
-          actual_date:   new Date().toISOString().slice(0,10),
-          amount:        txAmt,
+          actual_date:    new Date().toISOString().slice(0,10),
+          amount:         txAmt,
           transaction_id: newTx.id,
         }, { onConflict: 'scheduled_id,scheduled_date' });
 
@@ -419,49 +500,88 @@ function nextScheduledDate(dateStr, sc) {
 }
 
 /* ── Email Notifications ── */
+function _ejMonthYear(dateStr) {
+  try {
+    const d = new Date(dateStr + 'T00:00:00');
+    return d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  } catch { return dateStr; }
+}
+
+function _ejEsc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function buildScheduledEmailReportContent(sc, dateStr, amount, mode, daysBefore) {
+  const desc = _ejEsc(sc.description || '');
+  const type = _ejEsc(sc.type || '');
+  const status = mode === 'upcoming' ? 'scheduled' : 'processed';
+  const acc = _ejEsc(sc.accounts?.name || '-');
+  const toAcc = _ejEsc(sc.transfer_to_account_name || '-');
+  const cat = _ejEsc(sc.categories?.name || '-');
+  const payee = _ejEsc(sc.payees?.name || '-');
+  const cur = _ejEsc(sc.accounts?.currency || sc.currency || 'BRL');
+  const amt = _ejEsc(fmt(Math.abs(amount)));
+  const when = _ejEsc(fmtDate(dateStr));
+  const hint = mode === 'upcoming'
+    ? `Será processada ${daysBefore > 0 ? `em ${daysBefore} dia(s)` : 'hoje'}.`
+    : 'Foi processada automaticamente.';
+
+  return `
+  <div style="font-family:Arial,Helvetica,sans-serif;background:#f5f7fb;padding:14px">
+    <div style="max-width:520px;margin:0 auto;background:#ffffff;border:1px solid #e6e8f0;border-radius:12px;padding:16px">
+      <div style="font-size:14px;color:#6b7280;margin-bottom:6px">${_ejEsc(hint)}</div>
+      <div style="font-size:16px;font-weight:700;color:#111827;margin-bottom:2px">${desc}</div>
+      <div style="font-size:22px;font-weight:800;color:#0f766e;margin-bottom:10px">${amt} <span style="font-size:12px;color:#6b7280;font-weight:700">${cur}</span></div>
+
+      <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:13px;color:#374151">
+        <tr><td style="padding:6px 0;color:#6b7280;width:38%">Data</td><td style="padding:6px 0;font-weight:600">${when}</td></tr>
+        <tr><td style="padding:6px 0;color:#6b7280">Tipo</td><td style="padding:6px 0;font-weight:600">${type}</td></tr>
+        <tr><td style="padding:6px 0;color:#6b7280">Conta</td><td style="padding:6px 0;font-weight:600">${acc}</td></tr>
+        <tr><td style="padding:6px 0;color:#6b7280">Conta destino</td><td style="padding:6px 0;font-weight:600">${toAcc}</td></tr>
+        <tr><td style="padding:6px 0;color:#6b7280">Categoria</td><td style="padding:6px 0;font-weight:600">${cat}</td></tr>
+        <tr><td style="padding:6px 0;color:#6b7280">Beneficiário</td><td style="padding:6px 0;font-weight:600">${payee}</td></tr>
+        <tr><td style="padding:6px 0;color:#6b7280">Status</td><td style="padding:6px 0;font-weight:600">${_ejEsc(status)}</td></tr>
+      </table>
+    </div>
+  </div>`;
+}
+
 async function sendScheduledNotification(sc, date, amount, emailTo) {
-  if(!EMAILJS_CONFIG.serviceId || !EMAILJS_CONFIG.publicKey || !EMAILJS_CONFIG.templateId) return;
+  const tplId = EMAILJS_CONFIG.scheduledTemplateId || EMAILJS_CONFIG.templateId;
+  if(!EMAILJS_CONFIG.serviceId || !EMAILJS_CONFIG.publicKey || !tplId) return;
   try {
     emailjs.init(EMAILJS_CONFIG.publicKey);
-    await emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templateId, {
-      to_email:    emailTo,
-      subject:     `✅ Transação registrada: ${sc.description}`,
-      message:     `A transação "${sc.description}" de ${fmt(Math.abs(amount))} foi registrada automaticamente em ${fmtDate(date)}.`,
-      from_name:   'Family FinTrack',
-      report_period: fmtDate(date),
-      report_income: amount > 0 ? fmt(amount) : '—',
-      report_expense: amount < 0 ? fmt(Math.abs(amount)) : '—',
-      report_balance: fmt(amount),
-      report_count: '1',
-      report_view: 'Automático',
+    const month_year = _ejMonthYear(date);
+    await emailjs.send(EMAILJS_CONFIG.serviceId, tplId, {
+      to_email: emailTo,
+      Subject: sc.description || 'Transação programada',
+      month_year,
+      report_content: buildScheduledEmailReportContent(sc, date, amount, 'processed', 0),
     });
   } catch(e) { console.warn('[AutoReg] Email error:', e.message); }
 }
 
 async function sendUpcomingNotification(sc, date, emailTo, daysBefore) {
-  if(!EMAILJS_CONFIG.serviceId || !EMAILJS_CONFIG.publicKey || !EMAILJS_CONFIG.templateId) return;
+  const tplId = EMAILJS_CONFIG.scheduledTemplateId || EMAILJS_CONFIG.templateId;
+  if(!EMAILJS_CONFIG.serviceId || !EMAILJS_CONFIG.publicKey || !tplId) return;
   // Check if already sent (use localStorage to avoid duplicates)
   const sentKey = `notified_${sc.id}_${date}`;
   if(localStorage.getItem(sentKey)) return;
   try {
     emailjs.init(EMAILJS_CONFIG.publicKey);
-    await emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templateId, {
-      to_email:    emailTo,
-      subject:     `🔔 Transação programada em ${daysBefore > 0 ? daysBefore + ' dia(s)' : 'hoje'}: ${sc.description}`,
-      message:     `Lembrete: a transação "${sc.description}" de ${fmt(Math.abs(sc.amount))} está programada para ${fmtDate(date)}.`,
-      from_name:   'Family FinTrack — Lembrete',
-      report_period: fmtDate(date),
-      report_income: sc.amount > 0 ? fmt(sc.amount) : '—',
-      report_expense: sc.amount < 0 ? fmt(Math.abs(sc.amount)) : '—',
-      report_balance: fmt(sc.amount),
-      report_count: '1',
-      report_view: 'Lembrete',
+    const month_year = _ejMonthYear(date);
+    await emailjs.send(EMAILJS_CONFIG.serviceId, tplId, {
+      to_email: emailTo,
+      Subject: sc.description || 'Transação programada',
+      month_year,
+      report_content: buildScheduledEmailReportContent(sc, date, sc.amount, 'upcoming', daysBefore || 0),
     });
     localStorage.setItem(sentKey, '1');
   } catch(e) { console.warn('[AutoReg] Upcoming email error:', e.message); }
 }
 
 /* ══════════════════════════════════════════════════════════════════
+   SQL MIGRATION — Fields for auto_regis
    SQL MIGRATION — Fields for auto_register
    (run in Supabase SQL Editor)
 ══════════════════════════════════════════════════════════════════ */

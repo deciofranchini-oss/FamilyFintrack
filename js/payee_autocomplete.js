@@ -255,7 +255,9 @@ function confirmSimilarPayee(id, name) {
 
 async function createPayeeFromInput(ctx) {
   const c = payeeCtx(ctx);
-  const typed = c.nameEl?.value.trim() || '';
+  const typed = (typeof normalizePayeeName === 'function'
+    ? normalizePayeeName(c.nameEl?.value || '')
+    : (c.nameEl?.value || '').trim());
   if (!typed) return;
   const txType = c.typeEl?.value || 'expense';
   const payeeType = txType === 'income' ? 'fonte_pagadora' : 'beneficiario';

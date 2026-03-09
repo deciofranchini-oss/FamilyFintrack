@@ -1,5 +1,5 @@
 async function openUserAdmin() {
-  if (currentUser?.role !== 'admin') { toast('Acesso restrito a administradores','error'); return; }
+  if (!(currentUser?.can_admin || currentUser?.role === 'owner' || currentUser?.role === 'admin')) { toast('Acesso restrito a administradores','error'); return; }
   await loadFamiliesList();
   await loadUsersList();
   openModal('userAdminModal');
@@ -63,7 +63,7 @@ async function loadFamiliesList() {
       ? members.map(u => `
           <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)">
             <span style="font-size:.82rem;flex:1"><strong>${esc(u.name||'—')}</strong> <span style="color:var(--muted);font-size:.75rem">${esc(u.email)}</span></span>
-            <span class="badge ${u.role==='admin'?'badge-amber':'badge-muted'}" style="font-size:.7rem">${u.role}</span>
+            <span class="badge ${(u.role==='admin'||u.role==='owner')?'badge-amber':'badge-muted'}" style="font-size:.7rem">${u.role}</span>
             <button class="btn-icon" title="Remover da família" onclick="removeUserFromFamily('${u.id}','${esc(u.name||u.email)}','${esc(f.name)}')">✕</button>
           </div>`).join('')
       : '<div style="font-size:.78rem;color:var(--muted);padding:8px 0">Nenhum membro</div>';
@@ -201,7 +201,7 @@ async function loadUsersList() {
     html += activeUsers.map(u => `<tr>
       <td><strong>${esc(u.name||'—')}</strong></td>
       <td style="font-size:.82rem">${esc(u.email)}</td>
-      <td><span class="badge badge-green" style="font-size:.7rem">${u.role==='admin'?'Admin':u.role==='viewer'?'Viewer':'Usuário'}</span></td>
+      <td><span class="badge badge-green" style="font-size:.7rem">${u.role==='owner'?'Owner':u.role==='admin'?'Admin':u.role==='viewer'?'Viewer':'Usuário'}</span></td>
       <td style="font-size:.78rem;color:var(--text2)">${u.family_id ? (famById[u.family_id]||'—') : '<span style="color:var(--muted)">—</span>'}</td>
       <td><span style="font-size:.75rem;color:${u.active?'var(--green)':'var(--red)'}">● ${u.active?'Ativo':'Inativo'}</span></td>
       <td style="white-space:nowrap">
@@ -273,7 +273,7 @@ async function saveUser() {
     can_delete: document.getElementById('pDelete').checked,
     can_export: document.getElementById('pExport').checked,
     can_import: document.getElementById('pImport').checked,
-    can_admin:  role === 'admin',
+    can_admin:  role === 'admin' || role === 'owner',
   };
   if (pwd) record.password_hash = await sha256(pwd);
   if (!userId) { record.must_change_pwd = false; record.active = true; record.approved = true; record.created_by = currentUser?.id; }

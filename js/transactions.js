@@ -234,7 +234,9 @@ async function loadTransactions(){
       const y = f.month.split(':')[1];
       q=q.gte('date',`${y}-01-01`).lte('date',`${y}-12-31`);
     } else {
-      const[y,m]=f.month.split('-');q=q.gte('date',`${y}-${m}-01`).lte('date',`${y}-${m}-31`);
+      const[y,m]=f.month.split('-');
+      const lastDay = new Date(+y, +m, 0).getDate(); // day 0 of next month = last day of this month
+      q=q.gte('date',`${y}-${m}-01`).lte('date',`${y}-${m}-${String(lastDay).padStart(2,'0')}`);
     }
   }
   if(f.account)q=q.eq('account_id',f.account);if(f.search)q=q.ilike('description','%'+f.search+'%');
@@ -289,14 +291,32 @@ function populateTxMonthFilter() {
 }
 function sortTx(field){if(state.txSortField===field)state.txSortAsc=!state.txSortAsc;else{state.txSortField=field;state.txSortAsc=false;}loadTransactions();}
 function txRow(t, showAccount=true) {
-  return `<tr class="tx-row-clickable ${(t.status||'confirmed')==='pending' ? 'tx-pending' : ''}" data-tx-id="${t.id}" onclick="openTxDetail('${t.id}')" style="cursor:pointer" onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background=''">
-    <td class="text-muted" style="white-space:nowrap">${fmtDate(t.date)}${(t.status||'confirmed')==='pending' ? ' <span class="badge" style="margin-left:6px;background:var(--yellow-lt,#fef9c3);color:#92400e;border:1px solid #fcd34d">Pendente</span>' : ''}</td>
-    ${showAccount ? `<td><span class="badge badge-muted">${esc(t.accounts?.name||'—')}</span></td>` : ''}
-    <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.description||'—')}</td>
-    <td class="text-muted">${esc(t.payees?.name||'—')}</td>
-    <td>${t.categories?`<span class="badge" style="background:${t.categories.color}18;color:${t.categories.color};border:1px solid ${t.categories.color}30">${esc(t.categories.name)}</span>`:'—'}</td>
-    <td class="${t.amount>=0?'amount-pos':'amount-neg'}" style="white-space:nowrap">${fmt(t.amount)}</td>
-    <td onclick="event.stopPropagation()"><div style="display:flex;gap:4px"><button class="btn-icon" title="Editar" onclick="editTransaction('${t.id}')">✏️</button><button class="btn-icon" title="Duplicar" onclick="duplicateTransaction('${t.id}')">📋</button><button class="btn-icon" title="Excluir" onclick="deleteTransaction('${t.id}')">🗑️</button></div></td>
+  const isPending = (t.status||'confirmed') === 'pending';
+  const pendingBadge = isPending ? ' <span class="badge" style="margin-left:5px;background:var(--yellow-lt,#fef9c3);color:#92400e;border:1px solid #fcd34d;font-size:.65rem">Pendente</span>' : '';
+  const cat = t.categories
+    ? `<span class="badge" style="background:${t.categories.color}18;color:${t.categories.color};border:1px solid ${t.categories.color}30;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:middle">${esc(t.categories.name)}</span>`
+    : '<span class="text-muted" style="font-size:.78rem">—</span>';
+  const acctCell = showAccount
+    ? `<td><span class="badge badge-muted" style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:middle">${esc(t.accounts?.name||'—')}</span></td>`
+    : `<td style="display:none"></td>`;
+  return `<tr class="tx-row-clickable${isPending?' tx-pending':''}" data-tx-id="${t.id}" onclick="openTxDetail('${t.id}')" style="cursor:pointer">
+    <td class="text-muted tx-col-date" style="white-space:nowrap;font-size:.8rem">${fmtDate(t.date)}${pendingBadge}</td>
+    ${acctCell}
+    <td class="tx-col-desc" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.description||'—')}${t.attachment_url?'<span title="Tem anexo" style="margin-left:4px;opacity:.6;font-size:.72rem">📎</span>':''}</td>
+    <td class="text-muted tx-col-pay" style="font-size:.82rem;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.payees?.name||'—')}</td>
+    <td class="tx-col-cat">${cat}</td>
+    <td class="${t.amount>=0?'amount-pos':'amount-neg'} tx-col-amt" style="white-space:nowrap;font-variant-numeric:tabular-nums">
+      ${(()=>{
+        const cur = (t.currency||t.accounts?.currency||'BRL').toUpperCase();
+        const mainFmt = fmt(t.amount, cur);
+        // Se moeda estrangeira E temos brl_amount, mostra conversão como tooltip/subtext
+        if (cur !== 'BRL' && t.brl_amount != null) {
+          return `<span title="${mainFmt} = ${fmt(t.brl_amount,'BRL')}">${mainFmt}<span style="display:block;font-size:.68rem;color:var(--muted);font-weight:400">${fmt(t.brl_amount,'BRL')}</span></span>`;
+        }
+        return mainFmt;
+      })()}
+    </td>
+    <td class="tx-col-act" onclick="event.stopPropagation()"><div style="display:flex;gap:3px;justify-content:center"><button class="btn-icon" title="Editar" onclick="editTransaction('${t.id}')">✏️</button><button class="btn-icon" title="Duplicar" onclick="duplicateTransaction('${t.id}')">📋</button><button class="btn-icon" title="Excluir" onclick="deleteTransaction('${t.id}')">🗑️</button></div></td>
   </tr>`;
 }
 
@@ -312,7 +332,7 @@ function setTxView(v) {
 function renderTransactions(){
   const txs = state.transactions;
   let income=0, expense=0;
-  txs.forEach(t=>{ const st=(t.status||'confirmed'); if(st==='pending') return; if(t.amount>0)income+=t.amount; else expense+=t.amount;});
+  txs.forEach(t=>{ const st=(t.status||'confirmed'); if(st==='pending') return; const brl=txToBRL(t); if(brl>0)income+=brl; else expense+=brl;});
   document.getElementById('txCount').textContent = `${state.txTotal} transações`;
   document.getElementById('txTotalIncome').textContent = income ? `+${fmt(income)}` : '';
   document.getElementById('txTotalExpense').textContent = expense ? fmt(expense) : '';
@@ -347,9 +367,10 @@ function renderTransactionsGrouped(txs) {
     groups[key].txs.push(t);
     const st=(t.status||'confirmed');
     if(st!=='pending') {
-      if(t.amount > 0) groups[key].income += t.amount;
-      else groups[key].expense += t.amount;
-      groups[key].balance += t.amount;
+      const _brl = txToBRL(t); // converte para BRL (usa brl_amount se disponível)
+      if(_brl > 0) groups[key].income += _brl;
+      else groups[key].expense += _brl;
+      groups[key].balance += _brl;
     }
   });
 
@@ -373,7 +394,7 @@ function renderTransactionsGrouped(txs) {
       onmouseover="this.style.boxShadow='var(--shadow)'" onmouseout="this.style.boxShadow=''">
       ${renderIconEl(acct.icon, acct.color, 20)}
       <span style="font-weight:600;color:var(--text)">${esc(g.account?.name||'Sem conta')}</span>
-      <span class="${bal>=0?'amount-pos':'amount-neg'}" style="font-weight:600;font-size:.85rem">${fmt(bal)}</span>
+      <span class="${bal>=0?'amount-pos':'amount-neg'}" style="font-weight:600;font-size:.85rem">${fmt(bal,'BRL')}</span>
     </div>`;
   }).join('');
 
@@ -390,10 +411,10 @@ function renderTransactionsGrouped(txs) {
         ${renderIconEl(acct.icon, acct.color, 28)}
         <span style="font-weight:700;font-size:.95rem;flex:1">${esc(g.account?.name||'Sem conta')}</span>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-          ${g.income ? `<span class="badge badge-green" style="font-size:.75rem">+${fmt(g.income)}</span>` : ''}
-          ${g.expense ? `<span class="badge badge-red" style="font-size:.75rem">${fmt(g.expense)}</span>` : ''}
+          ${g.income ? `<span class="badge badge-green" style="font-size:.75rem">+${fmt(g.income,'BRL')}</span>` : ''}
+          ${g.expense ? `<span class="badge badge-red" style="font-size:.75rem">${fmt(g.expense,'BRL')}</span>` : ''}
           <span class="badge" style="font-size:.78rem;font-weight:700;background:${g.balance>=0?'var(--green-lt)':'var(--red-lt)'};color:${g.balance>=0?'var(--green)':'var(--red)'}">
-            ${g.balance>=0?'=':''} ${fmt(g.balance)}
+            ${g.balance>=0?'=':''} ${fmt(g.balance,'BRL')}
           </span>
           <span style="font-size:.7rem;color:var(--muted)">${g.txs.length} lanç.</span>
         </div>
@@ -402,7 +423,7 @@ function renderTransactionsGrouped(txs) {
       <div id="txGroupBody-${k}" class="tx-group-body">
         <div class="table-wrap" style="margin:0">
           <table style="border-radius:0">
-            <thead><tr><th onclick="sortTx('date')">Data ⇅</th><th>Descrição</th><th>Beneficiário</th><th>Categoria</th><th onclick="sortTx('amount')">Valor ⇅</th><th style="width:60px"></th></tr></thead>
+            <thead><tr><th class="tx-th-date" onclick="sortTx('date')">Data ⇅</th><th class="tx-th-acct" style="display:none">Conta</th><th class="tx-th-desc">Descrição</th><th class="tx-th-pay">Beneficiário</th><th class="tx-th-cat">Categoria</th><th class="tx-th-amt" onclick="sortTx('amount')">Valor ⇅</th><th class="tx-th-act"></th></tr></thead>
             <tbody>${g.txs.map(t => txRow(t, false)).join('')}</tbody>
           </table>
         </div>
@@ -426,6 +447,7 @@ function resetTxModal(){
   const stEl=document.getElementById('txStatus'); if(stEl) stEl.value='confirmed';
   setAmtField('txAmount', 0);
   document.getElementById('txTypeField').value='expense';
+  _hideTxCurrencyPanel();
   setTxType('expense');clearPayeeField('tx');hideCatSuggestion();setCatPickerValue(null);
   // Reset attachment — clear pending file AND all UI state
   window._txPendingFile = null;
@@ -435,6 +457,8 @@ function resetTxModal(){
   try { document.getElementById('txAttachFile').value = ''; } catch(e) {}
   document.getElementById('txAttachPreview').style.display = 'none';
   document.getElementById('txAttachArea').style.display = '';
+  // Reset IA de recibo
+  if (typeof resetReceiptAI === 'function') resetReceiptAI();
   const oldThumb = document.getElementById('txAttachThumb');
   if (oldThumb) oldThumb.remove();
   // Reset IOF
@@ -455,7 +479,23 @@ async function editTransaction(id){
   // Check IOF config for account
   setTimeout(()=>checkAccountIofConfig(data.account_id), 50);
   const type=data.is_transfer?(data.is_card_payment?'card_payment':'transfer'):data.amount>=0?'income':'expense';setTxType(type);if(type==='transfer'||type==='card_payment')document.getElementById('txTransferTo').value=data.transfer_to_account_id||'';
-  document.getElementById('txModalTitle').textContent='Editar Transação';openModal('txModal');
+  document.getElementById('txModalTitle').textContent='Editar Transação';
+  // Restore currency panel state after DOM settles
+  setTimeout(() => {
+    const type = document.getElementById('txTypeField').value;
+    const accId = document.getElementById('txAccountId').value;
+    if (type !== 'transfer' && type !== 'card_payment') {
+      _updateTxCurrencyPanel(accId);
+      // If the saved transaction had a currency rate, restore it
+      if (data.currency && data.currency !== 'BRL' && data.brl_amount) {
+        const impliedRate = Math.abs(data.brl_amount / (data.amount || 1));
+        const rateInput = document.getElementById('txCurrencyRate');
+        if (rateInput && impliedRate > 0) rateInput.value = impliedRate.toFixed(6);
+        updateTxCurrencyPreview();
+      }
+    }
+  }, 80);
+  openModal('txModal');
 }
 function _filterTxAccountOrigin(excludeCreditCards) {
   const sel = document.getElementById('txAccountId');
@@ -494,7 +534,282 @@ function setTxType(type){
   _filterTxAccountOrigin(isCardPayment);
   // Rebuild category picker filtered by transaction type
   buildCatPicker();
+  // Hide FX panel when switching away from transfer
+  if(!isTransfer) {
+    _hideFxPanel();
+    // Re-evaluate currency panel for the selected account
+    const accId = document.getElementById('txAccountId')?.value;
+    if (accId) _updateTxCurrencyPanel(accId);
+  } else {
+    _hideTxCurrencyPanel();
+  }
 }
+
+// ── FX / Exchange-rate helpers ─────────────────────────────────────────────
+
+// frankfurter.app: free, no key, CORS-correct, ECB data
+// Endpoint: GET https://api.frankfurter.app/YYYY-MM-DD?base=EUR&to=BRL
+const FX_API_BASE = 'https://api.frankfurter.app';
+
+function _getTransferCurrencies() {
+  const srcId  = document.getElementById('txAccountId').value;
+  const dstId  = document.getElementById('txTransferTo').value;
+  const srcAcc = state.accounts.find(a => a.id === srcId);
+  const dstAcc = state.accounts.find(a => a.id === dstId);
+  return {
+    src: srcAcc?.currency || 'BRL',
+    dst: dstAcc?.currency || 'BRL',
+    srcName: srcAcc?.name || '',
+    dstName: dstAcc?.name || '',
+  };
+}
+
+function _hideFxPanel() {
+  const panel = document.getElementById('txFxPanel');
+  if (panel) panel.style.display = 'none';
+}
+
+function onTransferAccountChange() {
+  const { src, dst } = _getTransferCurrencies();
+  const panel = document.getElementById('txFxPanel');
+  if (!panel) return;
+
+  if (!src || !dst || src === dst) {
+    panel.style.display = 'none';
+    return;
+  }
+
+  // Show the panel and update labels
+  panel.style.display = '';
+  const title = document.getElementById('txFxTitle');
+  const label = document.getElementById('txFxLabel');
+  if (title) title.textContent = `Câmbio: ${src} → ${dst}`;
+  if (label) label.textContent = `(1 ${src} = ? ${dst})`;
+
+  // Reset suggestion and preview
+  const sugg = document.getElementById('txFxSuggestion');
+  if (sugg) sugg.style.display = 'none';
+  const preview = document.getElementById('txFxPreview');
+  if (preview) preview.textContent = '';
+
+  // Auto-fetch the suggestion
+  fetchSuggestedFxRate();
+}
+
+// Also re-check when source account changes
+function _onTxSourceAccountChange(accountId) {
+  checkAccountIofConfig(accountId);
+  const type = document.getElementById('txTypeField').value;
+  if (type === 'transfer' || type === 'card_payment') {
+    onTransferAccountChange();
+  } else {
+    _updateTxCurrencyPanel(accountId);
+  }
+}
+
+// ── Currency helpers for regular expense/income transactions ──────────────
+
+/** Returns currency of currently selected source account */
+function _getTxAccountCurrency() {
+  const accId = document.getElementById('txAccountId')?.value;
+  const acc   = (state.accounts || []).find(a => a.id === accId);
+  return acc?.currency || 'BRL';
+}
+
+function _hideTxCurrencyPanel() {
+  const p = document.getElementById('txCurrencyPanel');
+  if (p) p.style.display = 'none';
+  const badge = document.getElementById('txCurrencyBadge');
+  if (badge) badge.textContent = 'BRL';
+}
+
+/** Updates currency badge and shows/hides the FX panel for expense/income */
+function _updateTxCurrencyPanel(accountId) {
+  const acc = (state.accounts || []).find(a => a.id === accountId);
+  const cur = acc?.currency || 'BRL';
+  const badge = document.getElementById('txCurrencyBadge');
+  if (badge) badge.textContent = cur;
+
+  const panel = document.getElementById('txCurrencyPanel');
+  if (!panel) return;
+
+  if (cur === 'BRL' || !accountId) {
+    panel.style.display = 'none';
+    return;
+  }
+
+  // Non-BRL account: show conversion panel
+  panel.style.display = '';
+  const title = document.getElementById('txCurrencyPanelTitle');
+  const fromLabel = document.getElementById('txCurrencyRateFromLabel');
+  if (title) title.textContent = `Conversão: ${cur} → BRL`;
+  if (fromLabel) fromLabel.textContent = cur;
+
+  // Clear suggestion + preview
+  const sugg = document.getElementById('txCurrencySuggestion');
+  if (sugg) sugg.style.display = 'none';
+  const preview = document.getElementById('txCurrencyPreview');
+  if (preview) preview.textContent = '';
+
+  // Auto-fetch suggestion
+  fetchTxCurrencyRate();
+}
+
+function onTxAmountInput() {
+  // IOF mirror (existing)
+  if (document.getElementById('txIsInternational')?.checked) updateIofMirror();
+  // Currency preview
+  updateTxCurrencyPreview();
+}
+
+function updateTxCurrencyPreview() {
+  const cur    = _getTxAccountCurrency();
+  const panel  = document.getElementById('txCurrencyPanel');
+  if (!panel || panel.style.display === 'none') return;
+  if (cur === 'BRL') return;
+
+  const rateVal = parseFloat(document.getElementById('txCurrencyRate')?.value?.replace(',', '.'));
+  const amtVal  = Math.abs(getAmtField('txAmount') || 0);
+  const preview = document.getElementById('txCurrencyPreview');
+  const hint    = document.getElementById('txCurrencyBrlHint');
+  if (!rateVal || isNaN(rateVal) || !amtVal) {
+    if (preview) preview.textContent = '';
+    if (hint) hint.textContent = '—';
+    return;
+  }
+  const brl = amtVal * rateVal;
+  if (preview) preview.textContent = `= ${fmt(brl, 'BRL')}`;
+  if (hint) hint.textContent = fmt(brl, 'BRL');
+}
+
+async function fetchTxCurrencyRate() {
+  const cur = _getTxAccountCurrency();
+  if (cur === 'BRL') return;
+
+  const btn  = document.getElementById('txCurrencyFetchBtn');
+  const icon = document.getElementById('txCurrencyFetchIcon');
+  const sugg = document.getElementById('txCurrencySuggestion');
+  if (btn)  btn.disabled = true;
+  if (icon) icon.textContent = '⏳';
+  if (sugg) sugg.style.display = 'none';
+
+  try {
+    let txDate = document.getElementById('txDate')?.value || new Date().toISOString().slice(0, 10);
+    const todayStr = new Date().toISOString().slice(0, 10);
+    if (txDate > todayStr) txDate = todayStr;
+
+    // Frankfurter: base=cur, to=BRL
+    // If cur = EUR use a direct call; EUR is always available as base
+    // Frankfurter doesn't serve EUR→EUR, so handle BRL base specially
+    let url, rate;
+    if (cur === 'EUR') {
+      url = `${FX_API_BASE}/${txDate}?base=EUR&to=BRL`;
+    } else {
+      // For USD, AED, etc: get cur→BRL directly
+      // Frankfurter supports any of its currencies as base
+      url = `${FX_API_BASE}/${txDate}?base=${cur}&to=BRL`;
+    }
+    const res  = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    rate = json?.rates?.BRL;
+    if (!rate) throw new Error('Taxa não encontrada');
+
+    const usedDate = json.date || txDate;
+    const rateStr  = Number(rate).toFixed(6);
+    const rateInput = document.getElementById('txCurrencyRate');
+    if (rateInput) rateInput.value = rateStr;
+    if (sugg) {
+      sugg.textContent = `📡 Cotação de ${usedDate} (BCE): 1 ${cur} = ${rateStr} BRL`;
+      sugg.style.display = '';
+      sugg.style.background = '';
+      sugg.style.color = '';
+    }
+    updateTxCurrencyPreview();
+  } catch (e) {
+    if (sugg) {
+      sugg.textContent = `⚠️ Não foi possível buscar: ${e.message}. Informe a taxa manualmente.`;
+      sugg.style.display = '';
+      sugg.style.background = '#fef9c3';
+      sugg.style.color = '#92400e';
+    }
+  } finally {
+    if (btn)  btn.disabled = false;
+    if (icon) icon.textContent = '🔄';
+  }
+}
+
+async function fetchSuggestedFxRate() {
+  const { src, dst } = _getTransferCurrencies();
+  if (!src || !dst || src === dst) return;
+
+  const btn  = document.getElementById('txFxFetchBtn');
+  const icon = document.getElementById('txFxFetchIcon');
+  const sugg = document.getElementById('txFxSuggestion');
+  if (btn)  { btn.disabled = true; }
+  if (icon) { icon.textContent = '⏳'; }
+  if (sugg) { sugg.style.display = 'none'; }
+
+  try {
+    // Use the transaction date for historical rate; fall back to today.
+    // Frankfurter uses weekday rates — if date is a weekend it returns the
+    // closest prior business day automatically.
+    let txDate = document.getElementById('txDate').value ||
+      new Date().toISOString().slice(0, 10);
+
+    // Frankfurter does not serve future dates — cap to today
+    const todayStr = new Date().toISOString().slice(0, 10);
+    if (txDate > todayStr) txDate = todayStr;
+
+    // GET /YYYY-MM-DD?base=SRC&to=DST
+    const url = `${FX_API_BASE}/${txDate}?base=${src}&to=${dst}`;
+    const res  = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+
+    // Response: { "base": "EUR", "date": "2026-03-06", "rates": { "BRL": 6.1234 } }
+    const rate = json?.rates?.[dst];
+    if (!rate) throw new Error('Taxa não encontrada na resposta');
+
+    const usedDate = json.date || txDate; // frankfurter returns actual business day used
+    const rateStr  = Number(rate).toFixed(6);
+
+    const rateInput = document.getElementById('txFxRate');
+    if (rateInput) rateInput.value = rateStr;
+
+    if (sugg) {
+      sugg.textContent = `📡 Cotação de ${usedDate} (BCE): 1 ${src} = ${rateStr} ${dst}`;
+      sugg.style.display  = '';
+      sugg.style.background = '';
+      sugg.style.color      = '';
+    }
+
+    updateFxPreview();
+
+  } catch(e) {
+    if (sugg) {
+      sugg.textContent = `⚠️ Não foi possível buscar a cotação: ${e.message}. Informe a taxa manualmente.`;
+      sugg.style.display = '';
+      sugg.style.background = '#fef9c3';
+      sugg.style.color = '#92400e';
+    }
+  } finally {
+    if (btn)  { btn.disabled = false; }
+    if (icon) { icon.textContent = '🔄'; }
+  }
+}
+
+function updateFxPreview() {
+  const { src, dst } = _getTransferCurrencies();
+  const rateVal  = parseFloat(document.getElementById('txFxRate')?.value?.replace(',', '.'));
+  const amtVal   = getAmtField('txAmount');
+  const preview  = document.getElementById('txFxPreview');
+  if (!preview) return;
+  if (!rateVal || isNaN(rateVal) || !amtVal) { preview.textContent = ''; return; }
+  const converted = (Math.abs(amtVal) * rateVal);
+  preview.textContent = `= ${fmt(converted, dst)}`;
+}
+
 async function saveTransaction(){
   const id=document.getElementById('txId').value,type=document.getElementById('txTypeField').value;
   let amount=getAmtField('txAmount');
@@ -503,6 +818,16 @@ async function saveTransaction(){
   if(type==='expense')amount=-Math.abs(amount);
   else if(type==='income')amount=Math.abs(amount);
   else if(isTransfer)amount=-Math.abs(amount); // debit origin account
+
+  // ── FX: compute credited amount for destination when currencies differ ──
+  let pairedAmount = Math.abs(amount); // default: 1:1 same amount
+  if (isTransfer && !isCardPayment) {
+    const { src, dst } = _getTransferCurrencies();
+    if (src && dst && src !== dst) {
+      const fxRate = parseFloat(document.getElementById('txFxRate')?.value?.replace(',', '.'));
+      if (fxRate > 0) pairedAmount = Math.abs(amount) * fxRate;
+    }
+  }
   const tags=document.getElementById('txTags').value.split(',').map(s=>s.trim()).filter(Boolean);
 
   // Determine attachment fields for the DB record
@@ -514,10 +839,24 @@ async function saveTransaction(){
   const existingUrl    = document.getElementById('txAttachUrl').value || null;
   const existingName   = document.getElementById('txAttachNameHidden').value || null;
 
+  // Determine transaction currency from selected account
+  const _txSrcAccId = document.getElementById('txAccountId').value;
+  const _txSrcAcc   = (state.accounts || []).find(a => a.id === _txSrcAccId);
+  const txCurrency  = _txSrcAcc?.currency || 'BRL';
+
+  // For non-BRL expense/income: compute brl_amount from the exchange rate panel
+  let brlAmount = null;
+  if (!isTransfer && txCurrency !== 'BRL') {
+    const fxRate = parseFloat(document.getElementById('txCurrencyRate')?.value?.replace(',', '.'));
+    if (fxRate > 0) brlAmount = Math.abs(amount) * fxRate;
+  }
+
   const data={
     date:document.getElementById('txDate').value,
     description:document.getElementById('txDesc').value.trim(),
     amount,
+    currency: txCurrency,
+    brl_amount: brlAmount,
     account_id:document.getElementById('txAccountId').value||null,
     payee_id:isTransfer?null:(document.getElementById('txPayeeId').value||null),
     category_id:document.getElementById('txCategoryId').value||null,
@@ -544,13 +883,12 @@ async function saveTransaction(){
         await sb.from('transactions').update({
           date: data.date,
           description: data.description,
-          amount: Math.abs(data.amount),
+          amount: pairedAmount,
           account_id: data.transfer_to_account_id,
           memo: data.memo,
           tags: data.tags,
           is_transfer: true,
           is_card_payment: data.is_card_payment,
-        status: data.status,
           status: data.status,
           transfer_to_account_id: data.account_id,
           updated_at: new Date().toISOString(),
@@ -565,7 +903,7 @@ async function saveTransaction(){
       const pairedTx = {
         date: data.date,
         description: data.description,
-        amount: Math.abs(data.amount),
+        amount: pairedAmount,
         account_id: data.transfer_to_account_id,
         payee_id: null,
         category_id: data.category_id || null,
@@ -628,6 +966,7 @@ async function saveTransaction(){
   if(state.currentPage==='dashboard')loadDashboard();
 }
 async function duplicateTransaction(id) {
+  if(!confirm('Duplicar transação?')) return;
   // Find original transaction
   const orig = state.transactions?.find(t=>t.id===id);
   if (!orig) {
@@ -707,27 +1046,55 @@ async function openTxDetail(id) {
     const isPdf   = _isAttachPdf(t.attachment_url, t.attachment_name);
     const isImage = _isAttachImage(t.attachment_url, t.attachment_name);
     const safeUrl = t.attachment_url.replace(/'/g, "\'");
-    const delBtn  = `<button onclick="if(confirm('Remover anexo?')){deleteTxAttachment('${t.id}','${safeUrl}').then(()=>{closeModal('txDetailModal');loadTransactions();})}" style="background:none;border:none;cursor:pointer;color:var(--red);font-size:.8rem;padding:2px 6px" title="Remover anexo">🗑️ Remover</button>`;
-    attachHtml = `
-      <div style="padding:12px 20px;border-top:1px solid var(--border)">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-          <span style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)">📎 Anexo</span>
-          ${delBtn}
-        </div>
-        ${isImage
-          ? `<a href="${t.attachment_url}" target="_blank" style="display:block;border-radius:var(--r-sm);overflow:hidden;border:1px solid var(--border)">
-               <img src="${t.attachment_url}" style="width:100%;max-height:260px;object-fit:contain;display:block;background:#f0f0f0">
-             </a>`
-          : `<a href="${t.attachment_url}" target="_blank"
-               style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r-sm);text-decoration:none;color:var(--text2)">
-               <span style="font-size:1.5rem">${isPdf ? '📄' : '📎'}</span>
-               <div>
-                 <div style="font-size:.85rem;font-weight:600;color:var(--text)">${esc(t.attachment_name || 'Abrir anexo')}</div>
-                 <div style="font-size:.72rem;color:var(--muted)">Clique para abrir ↗</div>
-               </div>
-             </a>`
-        }
-      </div>`;
+    const safeName = esc(t.attachment_name || 'Anexo');
+    const delMsg = 'Remover anexo?';
+    const delBtn = `<button onclick="if(confirm('${delMsg}')){deleteTxAttachment('${t.id}','${safeUrl}').then(()=>{closeModal('txDetailModal');loadTransactions();})}" style="background:none;border:none;cursor:pointer;color:var(--red);font-size:.78rem;padding:3px 8px;border:1px solid rgba(192,57,43,.3);border-radius:6px;display:flex;align-items:center;gap:4px" title="Remover anexo"><span>🗑️</span> Remover</button>`;
+
+    let previewContent;
+    if (isImage) {
+      previewContent = (
+        '<a href="' + t.attachment_url + '" target="_blank" rel="noopener"' +
+        ' style="display:block;border-radius:var(--r-sm);overflow:hidden;border:1px solid var(--border);background:#f8f8f8;position:relative">' +
+        '<img src="' + t.attachment_url + '"' +
+        ' style="width:100%;max-height:320px;object-fit:contain;display:block;background:#f0f0f0">' +
+        '<div style="position:absolute;bottom:0;left:0;right:0;padding:4px 8px;background:rgba(0,0,0,.38);color:#fff;font-size:.7rem;text-align:right">&#128269; Clique para abrir</div>' +
+        '</a>'
+      );
+    } else if (isPdf) {
+      previewContent = (
+        '<div style="border:1px solid var(--border);border-radius:var(--r-sm);overflow:hidden">' +
+        '<iframe src="' + t.attachment_url + '" width="100%" height="360"' +
+        ' style="display:block;border:none;background:#f8f8f8"></iframe>' +
+        '<a href="' + t.attachment_url + '" target="_blank" rel="noopener"' +
+        ' style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg2);border-top:1px solid var(--border);text-decoration:none;color:var(--text2);font-size:.8rem">' +
+        '<span>&#128196;</span><span>Abrir PDF em nova aba &#8599;</span>' +
+        '</a>' +
+        '</div>'
+      );
+    } else {
+      previewContent = (
+        '<a href="' + t.attachment_url + '" target="_blank" rel="noopener"' +
+        ' style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r-sm);text-decoration:none;color:var(--text2)">' +
+        '<span style="font-size:1.6rem">&#128206;</span>' +
+        '<div>' +
+        '<div style="font-size:.85rem;font-weight:600;color:var(--text)">' + safeName + '</div>' +
+        '<div style="font-size:.72rem;color:var(--muted)">Clique para baixar &#8599;</div>' +
+        '</div>' +
+        '</a>'
+      );
+    }
+    attachHtml = (
+      '<div style="padding:14px 20px;border-top:1px solid var(--border)">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">' +
+      '<div style="display:flex;align-items:center;gap:6px">' +
+      '<span style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)">&#128206; Anexo</span>' +
+      '<span style="font-size:.72rem;color:var(--muted2);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + safeName + '">' + safeName + '</span>' +
+      '</div>' +
+      delBtn +
+      '</div>' +
+      previewContent +
+      '</div>'
+    )
   }
 
   // ── Meta rows ────────────────────────────────────────────────────────────
@@ -794,6 +1161,7 @@ async function toggleTxDetailStatus() {
   if (!_txDetailId) return;
   const cur = (window._txDetailStatus || 'confirmed');
   const next = (cur === 'pending') ? 'confirmed' : 'pending';
+  if(cur === 'confirmed' && next === 'pending' && !confirm('Marcar transação como pendente?')) return;
   try {
     const { error } = await sb.from('transactions')
       .update({ status: next, updated_at: new Date().toISOString() })
@@ -904,6 +1272,13 @@ function applyTxCompactPreference(){
 
 // Toggle status helper used by detail view + swipe
 async function setTransactionStatus(txId, status){
+  // Extra confirmation when switching from Confirmada -> Pendente
+  try {
+    const cur = (state.transactions?.find(t=>t.id===txId)?.status) || (window._txDetailId===txId ? (window._txDetailStatus||'confirmed') : 'confirmed');
+    if(cur === 'confirmed' && status === 'pending') {
+      if(!confirm('Marcar transação como pendente?')) return;
+    }
+  } catch(e) {}
   if(!sb) throw new Error('Sem conexão');
   const { error } = await sb.from('transactions').update({ status, updated_at: new Date().toISOString() }).eq('id', txId);
   if(error) throw error;

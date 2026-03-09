@@ -313,3 +313,104 @@ function setCatPickerValue(catId, ctx) {
 /* ═══════════════════════════════════════════════════════
    SCHEDULED TRANSACTIONS
 ═══════════════════════════════════════════════════════ */
+
+
+/* ═══════════════════════════════════════════════════════
+   MONEY INPUT (AUTO DECIMALS) — iOS friendly
+   - User types only digits; UI always shows pt-BR money (0,00)
+   - Works with iPhone virtual keyboard (relies on 'input'/'beforeinput', not keydown)
+═══════════════════════════════════════════════════════ */
+(function(){
+  function _formatPtBrFromCents(cents){
+    cents = Math.max(0, Number.isFinite(cents) ? Math.floor(cents) : 0);
+    const intPart = Math.floor(cents / 100);
+    const decPart = String(cents % 100).padStart(2,'0');
+    // thousands separator
+    const intStr = String(intPart).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    return intStr + ',' + decPart;
+  }
+
+  function _applyMoneyMask(el){
+    if(!el) return;
+    if(el._moneyMasking) return;
+    el._moneyMasking = true;
+    try{
+      const digits = String(el.value||'').replace(/\D/g,'');
+      const cents = digits ? parseInt(digits,10) : 0;
+      el.dataset.moneyDigits = digits || '0';
+      const next = _formatPtBrFromCents(cents);
+      if(el.value !== next) el.value = next;
+      // keep caret at end (most predictable on iOS)
+      try{ el.setSelectionRange(el.value.length, el.value.length); } catch(e){}
+    } finally {
+      el._moneyMasking = false;
+    }
+  }
+
+  function _shouldMask(el){
+    if(!el || el.disabled || el.readOnly) return false;
+    // opt-in by id (surgical: no CSS/class refactor)
+    const ids = ['txAmount','scAmount','accountBalance','budgetAmount'];
+    return ids.includes(el.id);
+  }
+
+  function bindMoneyInput(el){
+    if(!el || el._moneyBound) return;
+    if(!_shouldMask(el)) return;
+    el._moneyBound = true;
+
+    // Ensure it's text so we can write commas safely across browsers
+    try{ el.setAttribute('type','text'); } catch(e){}
+    el.setAttribute('inputmode','numeric');
+    el.setAttribute('autocomplete','off');
+    el.setAttribute('autocorrect','off');
+    el.setAttribute('autocapitalize','off');
+    el.setAttribute('spellcheck','false');
+
+    // iOS: beforeinput is more reliable than keydown
+    el.addEventListener('beforeinput', function(ev){
+      if(ev && ev.inputType === 'insertText' && ev.data && /\D/.test(ev.data)) {
+        // block non-digits coming from suggestions/locale separators
+        ev.preventDefault();
+      }
+    });
+
+    el.addEventListener('input', function(){ _applyMoneyMask(el); });
+
+    el.addEventListener('paste', function(){
+      setTimeout(function(){ _applyMoneyMask(el); }, 0);
+    });
+
+    el.addEventListener('focus', function(){
+      // If field is empty, initialize it so user sees the money format immediately
+      if(!el.value) el.value = '0,00';
+      setTimeout(function(){
+        try{ el.setSelectionRange(el.value.length, el.value.length); } catch(e){}
+      }, 0);
+    });
+
+    el.addEventListener('blur', function(){
+      _applyMoneyMask(el);
+    });
+
+    // Initial normalization
+    _applyMoneyMask(el);
+  }
+
+  function initMoneyInputs(){
+    ['txAmount','scAmount','accountBalance','budgetAmount'].forEach(function(id){
+      const el = document.getElementById(id);
+      if(el) bindMoneyInput(el);
+    });
+  }
+
+  // Expose for debugging / manual rebinding after dynamic DOM changes
+  window.bindMoneyInput = bindMoneyInput;
+  window.initMoneyInputs = initMoneyInputs;
+
+  if(document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initMoneyInputs);
+  } else {
+    initMoneyInputs();
+  }
+})();

@@ -156,15 +156,28 @@ state.scheduled.sort((a,b) => {
   filterScheduled();
 }
 
+// Active chip state (replaces old scStatusFilter select)
+let _scStatusChip = 'all';
+
+function scChipFilter(event, status) {
+  _scStatusChip = status;
+  // Update active chip
+  ['all','active','paused','finished'].forEach(s => {
+    const el = document.getElementById('scChip' + s.charAt(0).toUpperCase() + s.slice(1));
+    if (el) el.classList.toggle('active', s === status);
+  });
+  filterScheduled();
+}
+
 function filterScheduled() {
   const search = (document.getElementById('scSearch')?.value||'').toLowerCase();
-  const statusF = document.getElementById('scStatusFilter')?.value||'';
+  const statusF = _scStatusChip || '';
   const typeF = document.getElementById('scTypeFilter')?.value||'';
 
   let list = state.scheduled;
   if(search) list = list.filter(s => s.description?.toLowerCase().includes(search) || s.payees?.name?.toLowerCase().includes(search));
   if(typeF) list = list.filter(s => s.type === typeF);
-  if(statusF) {
+  if(statusF && statusF !== 'all') {
     list = list.filter(s => {
       const st = scStatusLabel(s);
       if(statusF === 'active') return st.label.includes('Ativo') || st.label.includes('Atrasado');
@@ -234,14 +247,19 @@ function renderScheduled(list) {
             ${next ? `<span class="sc-next-badge">próx: ${fmtDate(next)}</span>` : ''}
           </div>
         </div>
-        <div class="sc-card-amount ${isExpense?'amount-neg':'amount-pos'}">
-          ${isCardPayment?'💳 ':''}${isTransferSc?'🔄 ':''}${isExpense?'-':'+'} ${fmt(Math.abs(sc.amount))}
-          ${isTransferSc&&destAcct?`<span style="font-size:.7rem;color:var(--muted)"> → ${esc(destAcct.name)}</span>`:''}
+        <div class="sc-card-right">
+          <div class="sc-card-amount ${isExpense?'amount-neg':'amount-pos'}">
+            ${isExpense?'−':'+'}${fmt(Math.abs(sc.amount))}
+          </div>
+          ${isTransferSc&&destAcct?`<div class="sc-card-transfer-tag">→ ${esc(destAcct.name)}</div>`:''}
         </div>
-        <div class="sc-card-actions" onclick="event.stopPropagation()">
-          ${next ? `<button class="btn btn-primary btn-sm" onclick="openRegisterOcc('${sc.id}','${next}')" title="Registrar próxima ocorrência">✓ Registrar</button>` : ''}
-          <button class="btn-icon" onclick="openScheduledModal('${sc.id}')" title="Editar">✏️</button>
-          <button class="btn-icon" onclick="deleteScheduled('${sc.id}')" title="Excluir">🗑️</button>
+      </div>
+      <div class="sc-card-footer" onclick="event.stopPropagation()">
+        ${next ? `<button class="sc-action-btn sc-action-register" onclick="openRegisterOcc('${sc.id}','${next}')">✓ Registrar</button>` : `<span></span>`}
+        <div class="sc-footer-actions">
+          <button class="sc-action-icon" onclick="toggleScStatus('${sc.id}')" title="${sc.status==='active'?'Pausar':'Reativar'}">${sc.status==='active'?'⏸':'▶'}</button>
+          <button class="sc-action-icon" onclick="openScheduledModal('${sc.id}')" title="Editar">✏️</button>
+          <button class="sc-action-icon sc-action-delete" onclick="deleteScheduled('${sc.id}')" title="Excluir">🗑️</button>
         </div>
       </div>
       <div class="sc-card-body" id="scBody-${sc.id}">
@@ -270,13 +288,10 @@ function renderScheduled(list) {
           }).join('')}
           ${sc.frequency !== 'once' && occList.length >= 8 ? `<div style="font-size:.75rem;color:var(--muted);text-align:center;padding:6px">... e mais ocorrências futuras</div>` : ''}
         </div>
-        <div style="padding:8px 16px 12px;display:flex;gap:8px;border-top:1px solid var(--border);flex-wrap:wrap">
-          <span style="font-size:.75rem;color:var(--muted)">Conta: <strong>${esc(acct?.name||'—')}</strong></span>
-          ${isTransferSc&&destAcct?`<span style="font-size:.75rem;color:var(--muted)">→ Destino: <strong>${esc(destAcct.name)}</strong></span>`:''}
-          ${sc.memo ? `<span style="font-size:.75rem;color:var(--muted)">· ${esc(sc.memo)}</span>` : ''}
-          <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="toggleScStatus('${sc.id}')">
-            ${sc.status==='active'?'⏸ Pausar':'▶ Reativar'}
-          </button>
+        <div class="sc-body-info">
+          <span>Conta: <strong>${esc(acct?.name||'—')}</strong></span>
+          ${isTransferSc&&destAcct?`<span>→ Destino: <strong>${esc(destAcct.name)}</strong></span>`:''}
+          ${sc.memo ? `<span>· ${esc(sc.memo)}</span>` : ''}
         </div>
       </div>
     </div>`;
@@ -301,8 +316,8 @@ function renderUpcoming() {
   });
   upcoming.sort((a, b) => a.date.localeCompare(b.date));
 
-  const card = document.getElementById('scheduledUpcomingCard');
-  const body = document.getElementById('scheduledUpcomingBody');
+  const card    = document.getElementById('scheduledUpcomingCard');
+  const listEl  = document.getElementById('scheduledUpcomingList');
   const totalEl = document.getElementById('scheduledUpcomingTotal');
   if(!upcoming.length) { if(card) card.style.display='none'; return; }
 
@@ -312,16 +327,25 @@ function renderUpcoming() {
     totalEl.textContent = (total>=0?'+':'') + fmt(total);
     totalEl.className = 'badge ' + (total>=0?'badge-green':'badge-red');
   }
-  if(body) body.innerHTML = upcoming.slice(0, 20).map(({sc, date}) => {
+
+  // Mobile-first card list (no table)
+  if(listEl) listEl.innerHTML = upcoming.slice(0, 20).map(({sc, date}) => {
     const isOverdue = date < today;
-    const isExpense = sc.type === 'expense';
-    return `<tr class="${isOverdue?'sc-upcoming-row-overdue':''}">
-      <td class="${isOverdue?'amount-neg':'text-muted'}" style="white-space:nowrap">${fmtDate(date)}${isOverdue?' ⚠':''}</td>
-      <td>${esc(sc.description)}${sc.payees?`<span style="color:var(--muted);font-size:.78rem"> · ${esc(sc.payees.name)}</span>`:''}</td>
-      <td><span class="badge badge-muted">${esc(sc.accounts?.name||'—')}</span></td>
-      <td class="${isExpense?'amount-neg':'amount-pos'}" style="white-space:nowrap">${isExpense?'-':'+'} ${fmt(Math.abs(sc.amount))}</td>
-      <td><button class="btn btn-primary btn-sm" onclick="openRegisterOcc('${sc.id}','${date}')">✓ Registrar</button></td>
-    </tr>`;
+    const isToday   = date === today;
+    const isExpense = sc.type === 'expense' || sc.type === 'card_payment' || sc.type === 'transfer';
+    const typeIcon  = sc.type === 'card_payment' ? '💳' : sc.type === 'transfer' ? '🔄' : isExpense ? '💸' : '💰';
+    const dateLabel = isToday ? '🔔 Hoje' : isOverdue ? `⚠️ ${fmtDate(date)}` : fmtDate(date);
+    return `<div class="sc-upcoming-item${isOverdue?' sc-upcoming-overdue':''}${isToday?' sc-upcoming-today':''}">
+      <div class="sc-upcoming-left">
+        <span class="sc-upcoming-date">${dateLabel}</span>
+        <span class="sc-upcoming-desc">${typeIcon} ${esc(sc.description)}</span>
+        <span class="sc-upcoming-acct">${esc(sc.accounts?.name||'—')}</span>
+      </div>
+      <div class="sc-upcoming-right">
+        <span class="${isExpense?'amount-neg':'amount-pos'} sc-upcoming-amt">${isExpense?'−':'+'}${fmt(Math.abs(sc.amount))}</span>
+        <button class="btn btn-primary btn-sm sc-upcoming-btn" onclick="openRegisterOcc('${sc.id}','${date}')">✓ Registrar</button>
+      </div>
+    </div>`;
   }).join('');
 }
 
@@ -359,8 +383,22 @@ function openScheduledModal(id='') {
   // Payee
   setPayeeField(sc?.payee_id||null, 'sc');
 
-  // Type
+  // Type — sets FX panel visibility
   setScType(sc?.type||'expense');
+
+  // Restore FX settings for cross-currency transfers
+  setTimeout(() => {
+    onScTransferAccountChange(); // re-evaluate if currencies differ
+    if (sc?.type === 'transfer') {
+      const fxMode = sc?.fx_mode || 'fixed';
+      setScFxMode(fxMode);
+      if (fxMode === 'fixed' && sc?.fx_rate) {
+        const input = document.getElementById('scFxRate');
+        if (input) input.value = Number(sc.fx_rate).toFixed(6);
+        updateScFxPreview();
+      }
+    }
+  }, 50);
 
   // Dates
   document.getElementById('scStartDate').value = sc?.start_date || new Date().toISOString().slice(0,10);
@@ -390,6 +428,24 @@ function openScheduledModal(id='') {
   });
 
   document.getElementById('scheduledModalTitle').textContent = id ? 'Editar Programação' : 'Programar Transação';
+
+  // Currency badge + panel — restore after type/account are settled
+  setTimeout(() => {
+    const type  = document.getElementById('scTypeField')?.value;
+    const accId = document.getElementById('scAccountId')?.value;
+    if (type !== 'transfer' && type !== 'card_payment' && accId) {
+      _updateScCurrencyPanel(accId);
+      // Se estava editando e tinha brl_amount, recalcula a taxa implícita
+      if (sc?.currency && sc.currency !== 'BRL' && sc.brl_amount && sc.amount) {
+        const impliedRate = Math.abs(sc.brl_amount / sc.amount);
+        const rateInput = document.getElementById('scCurrencyRate');
+        if (rateInput && impliedRate > 0) {
+          rateInput.value = impliedRate.toFixed(6);
+          updateScCurrencyPreview();
+        }
+      }
+    }
+  }, 80);
 
   // Auto-register & notify fields
   const arEl = document.getElementById('scAutoRegister');
@@ -428,10 +484,234 @@ function setScType(type) {
   if(cpBadge) cpBadge.style.display = isCardPayment ? '' : 'none';
   const trLabel = document.querySelector('#scTransferToGroup label');
   if(trLabel) trLabel.textContent = isCardPayment ? 'Cartão de Crédito (Destino) *' : 'Conta Destino *';
+  // Hide FX panel when switching away from transfer
+  if (!isTransfer) {
+    _hideScFxPanel();
+    const accId = document.getElementById('scAccountId')?.value;
+    if (accId) _updateScCurrencyPanel(accId);
+  } else {
+    _hideScCurrencyPanel();
+  }
   // Filter source account: card_payment origin cannot be a credit card account
   _filterScAccountOrigin(isCardPayment);
   // Rebuild category picker for this type
   buildCatPicker(null, 'sc');
+}
+
+// ── Scheduled FX helpers ──────────────────────────────────────────────────
+
+function _getScTransferCurrencies() {
+  const srcId  = document.getElementById('scAccountId')?.value;
+  const dstId  = document.getElementById('scTransferToAccountId')?.value;
+  const srcAcc = state.accounts.find(a => a.id === srcId);
+  const dstAcc = state.accounts.find(a => a.id === dstId);
+  return {
+    src: srcAcc?.currency || null,
+    dst: dstAcc?.currency || null,
+  };
+}
+
+function _hideScFxPanel() {
+  const panel = document.getElementById('scFxPanel');
+  if (panel) panel.style.display = 'none';
+}
+
+/** Dispatcher — chamado quando conta de origem muda */
+function onScAccountChange() {
+  const type = document.getElementById('scTypeField')?.value;
+  if (type === 'transfer' || type === 'card_payment') {
+    onScTransferAccountChange();
+  } else {
+    _updateScCurrencyPanel(document.getElementById('scAccountId')?.value);
+  }
+}
+
+// ── Currency helpers para despesa/receita em moeda estrangeira ────────────
+
+function _getScAccountCurrency() {
+  const acc = (state.accounts || []).find(a => a.id === document.getElementById('scAccountId')?.value);
+  return acc?.currency || 'BRL';
+}
+
+function _hideScCurrencyPanel() {
+  const p = document.getElementById('scCurrencyPanel');
+  if (p) p.style.display = 'none';
+  const badge = document.getElementById('scCurrencyBadge');
+  if (badge) badge.textContent = 'BRL';
+}
+
+function _updateScCurrencyPanel(accountId) {
+  const acc = (state.accounts || []).find(a => a.id === accountId);
+  const cur = acc?.currency || 'BRL';
+  const badge = document.getElementById('scCurrencyBadge');
+  if (badge) badge.textContent = cur;
+
+  const panel = document.getElementById('scCurrencyPanel');
+  if (!panel) return;
+
+  if (cur === 'BRL' || !accountId) {
+    panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = '';
+  const title = document.getElementById('scCurrencyPanelTitle');
+  const fromLabel = document.getElementById('scCurrencyRateFromLabel');
+  if (title) title.textContent = `Conversão: ${cur} → BRL`;
+  if (fromLabel) fromLabel.textContent = cur;
+
+  const sugg = document.getElementById('scCurrencySuggestion');
+  if (sugg) sugg.style.display = 'none';
+  const preview = document.getElementById('scCurrencyPreview');
+  if (preview) preview.textContent = '';
+  fetchScCurrencyRate();
+}
+
+function updateScCurrencyPreview() {
+  const type = document.getElementById('scTypeField')?.value;
+  if (type === 'transfer' || type === 'card_payment') return;
+  const panel = document.getElementById('scCurrencyPanel');
+  if (!panel || panel.style.display === 'none') return;
+  const rateVal = parseFloat(document.getElementById('scCurrencyRate')?.value?.replace(',', '.'));
+  const amtVal  = Math.abs(getAmtField('scAmount') || 0);
+  const preview = document.getElementById('scCurrencyPreview');
+  const hint    = document.getElementById('scCurrencyBrlHint');
+  if (!rateVal || isNaN(rateVal) || !amtVal) {
+    if (preview) preview.textContent = '';
+    if (hint)    hint.textContent = '—';
+    return;
+  }
+  const brl = amtVal * rateVal;
+  if (preview) preview.textContent = `= ${fmt(brl, 'BRL')}`;
+  if (hint)    hint.textContent = fmt(brl, 'BRL');
+}
+
+async function fetchScCurrencyRate() {
+  const cur = _getScAccountCurrency();
+  if (cur === 'BRL') return;
+  const btn  = document.getElementById('scCurrencyFetchBtn');
+  const icon = document.getElementById('scCurrencyFetchIcon');
+  const sugg = document.getElementById('scCurrencySuggestion');
+  if (btn)  btn.disabled = true;
+  if (icon) icon.textContent = '⏳';
+  if (sugg) sugg.style.display = 'none';
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const fxBase = (typeof FX_API_BASE !== 'undefined') ? FX_API_BASE : 'https://api.frankfurter.app';
+    const url = `${fxBase}/${today}?base=${cur}&to=BRL`;
+    const res  = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    const rate = json?.rates?.BRL;
+    if (!rate) throw new Error('Taxa não encontrada');
+    const rateStr = Number(rate).toFixed(6);
+    const rateInput = document.getElementById('scCurrencyRate');
+    if (rateInput) rateInput.value = rateStr;
+    if (sugg) {
+      sugg.textContent = `📡 Cotação de ${json.date} (BCE): 1 ${cur} = ${rateStr} BRL`;
+      sugg.style.display = '';
+      sugg.style.background = '';
+      sugg.style.color = '';
+    }
+    updateScCurrencyPreview();
+  } catch (e) {
+    if (sugg) {
+      sugg.textContent = `⚠️ Não foi possível buscar: ${e.message}. Informe manualmente.`;
+      sugg.style.display = '';
+      sugg.style.background = '#fef9c3';
+      sugg.style.color = '#92400e';
+    }
+  } finally {
+    if (btn)  btn.disabled = false;
+    if (icon) icon.textContent = '🔄';
+  }
+}
+
+function onScTransferAccountChange() {
+  const { src, dst } = _getScTransferCurrencies();
+  const panel = document.getElementById('scFxPanel');
+  if (!panel) return;
+  const type = document.getElementById('scTypeField').value;
+  if (type !== 'transfer' || !src || !dst || src === dst) {
+    panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = '';
+  const title = document.getElementById('scFxTitle');
+  const label = document.getElementById('scFxLabel');
+  if (title) title.textContent = `Câmbio: ${src} → ${dst}`;
+  if (label) label.textContent = `(1 ${src} = ? ${dst})`;
+  updateScFxPreview();
+}
+
+function setScFxMode(mode) {
+  const fixedBtn  = document.getElementById('scFxModeFixed');
+  const apiBtn    = document.getElementById('scFxModeApi');
+  const fixedPan  = document.getElementById('scFxFixedPanel');
+  const apiPan    = document.getElementById('scFxApiPanel');
+  const activeStyle   = 'border-color:#2563eb;background:#2563eb;color:#fff;';
+  const inactiveStyle = 'border-color:#e5e7eb;background:transparent;color:#6b7280;';
+  if (mode === 'fixed') {
+    if (fixedBtn) fixedBtn.style.cssText += activeStyle;
+    if (apiBtn)   apiBtn.style.cssText   += inactiveStyle;
+    if (fixedPan) fixedPan.style.display = '';
+    if (apiPan)   apiPan.style.display   = 'none';
+    document.getElementById('scFxPanel')?.setAttribute('data-fx-mode', 'fixed');
+  } else {
+    if (fixedBtn) fixedBtn.style.cssText += inactiveStyle;
+    if (apiBtn)   apiBtn.style.cssText   += activeStyle;
+    if (fixedPan) fixedPan.style.display = 'none';
+    if (apiPan)   apiPan.style.display   = '';
+    document.getElementById('scFxPanel')?.setAttribute('data-fx-mode', 'api');
+  }
+}
+
+async function fetchScSuggestedFxRate() {
+  const { src, dst } = _getScTransferCurrencies();
+  if (!src || !dst || src === dst) return;
+  const btn  = document.getElementById('scFxFetchBtn');
+  const icon = document.getElementById('scFxFetchIcon');
+  const sugg = document.getElementById('scFxSuggestion');
+  if (btn) btn.disabled = true;
+  if (icon) icon.textContent = '⏳';
+  if (sugg) sugg.style.display = 'none';
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const res = await fetch(`https://api.frankfurter.app/${today}?base=${src}&to=${dst}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    const rate = json?.rates?.[dst];
+    if (!rate) throw new Error('Taxa não encontrada');
+    const rateStr = Number(rate).toFixed(6);
+    const input = document.getElementById('scFxRate');
+    if (input) input.value = rateStr;
+    if (sugg) {
+      sugg.textContent = `📡 Cotação de ${json.date||today} (BCE): 1 ${src} = ${rateStr} ${dst}`;
+      sugg.style.display = '';
+      sugg.style.background = '';
+      sugg.style.color = '';
+    }
+    updateScFxPreview();
+  } catch(e) {
+    if (sugg) {
+      sugg.textContent = `⚠️ Não foi possível buscar: ${e.message}`;
+      sugg.style.display = '';
+      sugg.style.background = '#fef9c3';
+      sugg.style.color = '#92400e';
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+    if (icon) icon.textContent = '🔄';
+  }
+}
+
+function updateScFxPreview() {
+  const { src, dst } = _getScTransferCurrencies();
+  const rateVal = parseFloat(document.getElementById('scFxRate')?.value?.replace(',', '.'));
+  const amtVal  = getAmtField('scAmount');
+  const preview = document.getElementById('scFxPreview');
+  if (!preview) return;
+  if (!rateVal || isNaN(rateVal) || !amtVal) { preview.textContent = ''; return; }
+  preview.textContent = `= ${fmt(Math.abs(amtVal) * rateVal, dst)}`;
 }
 
 function _filterScAccountOrigin(excludeCreditCards) {
@@ -505,10 +785,29 @@ async function saveScheduled() {
   const notifyEm = document.getElementById('scNotifyEmail')?.checked || false;
   const isScTransfer = type==='transfer' || type==='card_payment';
   const isScCardPayment = type==='card_payment';
+
+  // FX settings for cross-currency transfers
+  const fxPanel   = document.getElementById('scFxPanel');
+  const fxVisible = fxPanel && fxPanel.style.display !== 'none';
+  const fxMode    = fxVisible ? (fxPanel.getAttribute('data-fx-mode') || 'fixed') : null;
+  const fxRateRaw = parseFloat(document.getElementById('scFxRate')?.value?.replace(',', '.'));
+  const fxRate    = (fxMode === 'fixed' && fxRateRaw > 0) ? fxRateRaw : null;
+
+  // Moeda da conta de origem
+  const _scAcc     = (state.accounts || []).find(a => a.id === document.getElementById('scAccountId').value);
+  const scCurrency = _scAcc?.currency || 'BRL';
+  let scBrlAmount  = null;
+  if (!isScTransfer && scCurrency !== 'BRL') {
+    const fxRate = parseFloat(document.getElementById('scCurrencyRate')?.value?.replace(',', '.'));
+    if (fxRate > 0) scBrlAmount = Math.abs(amount) * fxRate;
+  }
+
   const data = {
     description: document.getElementById('scDesc').value.trim(),
     type,
     amount: (type==='expense'||isScTransfer) ? -Math.abs(amount) : Math.abs(amount),
+    currency:   scCurrency,
+    brl_amount: scBrlAmount,
     account_id: document.getElementById('scAccountId').value || null,
     transfer_to_account_id: isScTransfer ? (document.getElementById('scTransferToAccountId')?.value || null) : null,
     payee_id: isScTransfer ? null : (document.getElementById('scPayeeId').value || null),
@@ -527,6 +826,8 @@ async function saveScheduled() {
     notify_email: notifyEm,
     notify_email_addr: notifyEm ? (document.getElementById('scNotifyEmailAddr')?.value.trim()||null) : null,
     notify_days_before: notifyEm ? parseInt(document.getElementById('scNotifyDaysBefore')?.value||'1') : 1,
+    fx_mode:  fxVisible ? fxMode : null,
+    fx_rate:  fxRate,
     updated_at: new Date().toISOString(),
   };
 
